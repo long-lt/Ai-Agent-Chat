@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Agent Chat — Multi-Agent Group Chat</title>
+  <meta name="description" content="Trò chuyện nhóm với nhiều AI Agent từ các nhà cung cấp khác nhau: Gemini, GPT, Claude." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ── Sidebar Left ─────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">AgentChat</span>
+      </div>
+      <button class="icon-btn" id="btn-new-room" title="Tạo phòng mới">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Phòng chat</span>
+      <ul class="room-list" id="room-list">
+        <!-- Rooms injected by JS -->
+      </ul>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="sidebar-footer-btn" id="btn-agent-library">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="7" height="7"/><rect x="15" y="3" width="7" height="7"/><rect x="15" y="14" width="7" height="7"/><rect x="2" y="14" width="7" height="7"/></svg>
+        Kho Agent
+      </button>
+      <button class="sidebar-footer-btn" id="btn-settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Cài đặt
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main Chat Area ──────────────────────────────────── -->
+  <main class="main-area" id="main-area">
+
+    <!-- Empty state -->
+    <div class="empty-state" id="empty-state">
+      <div class="empty-state-icon">⚡</div>
+      <h1 class="empty-state-title">AI Agent Group Chat</h1>
+      <p class="empty-state-subtitle">Tạo phòng chat mới để bắt đầu trò chuyện với nhiều AI Agent cùng lúc.</p>
+      <button class="btn-primary" id="btn-create-first-room">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Tạo phòng mới
+      </button>
+    </div>
+
+    <!-- Chat container (hidden until room selected) -->
+    <div class="chat-container" id="chat-container" style="display:none">
+
+      <!-- Chat header -->
+      <header class="chat-header" id="chat-header">
+        <div class="chat-header-left">
+          <button class="icon-btn mobile-only" id="btn-toggle-sidebar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div>
+            <h2 class="room-title" id="room-title">Room Name</h2>
+            <div class="agent-pills" id="agent-pills"></div>
+          </div>
+        </div>
+        <div class="chat-header-right">
+          <button class="icon-btn" id="btn-library-panel" title="Kho Agent">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-room-settings" title="Cài đặt phòng">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <button class="icon-btn danger-hover" id="btn-delete-room" title="Xóa phòng">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Messages area -->
+      <div class="messages-area" id="messages-area">
+        <!-- Messages injected here -->
+      </div>
+
+      <!-- Input area -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <div class="mention-hint" id="mention-hint" style="display:none"></div>
+          <textarea
+            class="message-input"
+            id="message-input"
+            placeholder="Nhắn tin... (dùng @TênAgent để gọi agent cụ thể)"
+            rows="1"
+          ></textarea>
+          <button class="send-btn" id="send-btn" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="input-footer">
+          <span class="input-hint">Enter để gửi · Shift+Enter xuống dòng</span>
+          <span class="connection-status" id="connection-status">
+            <span class="status-dot disconnected"></span> Chưa kết nối
+          </span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Modal: Create/Edit Room ─────────────────────────── -->
+  <div class="modal-overlay" id="modal-room" style="display:none">
+    <div class="modal" id="modal-room-content">
+      <div class="modal-header">
+        <h3 id="modal-room-title">Tạo phòng mới</h3>
+        <button class="icon-btn" id="btn-close-room-modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="room-name-input">Tên phòng</label>
+          <input type="text" id="room-name-input" class="form-input" placeholder="Ví dụ: Phòng thảo luận AI" />
+        </div>
+
+        <div class="form-group">
+          <label>AI Agents tham gia</label>
+          <div class="agent-list-editor" id="agent-list-editor">
+            <!-- Agent cards injected by JS -->
+          </div>
+          <button class="btn-secondary" id="btn-add-agent">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Thêm Agent
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-ghost" id="btn-cancel-room">Hủy</button>
+        <button class="btn-primary" id="btn-save-room">Tạo phòng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Add Agent ────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-agent" style="display:none">
+    <div class="modal modal-sm" id="modal-agent-content">
+      <div class="modal-header">
+        <h3>Cấu hình Agent</h3>
+        <button class="icon-btn" id="btn-close-agent-modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="agent-name-input">Tên Agent</label>
+          <input type="text" id="agent-name-input" class="form-input" placeholder="Ví dụ: Gemini Expert" />
+        </div>
+        <div class="form-group">
+          <label for="agent-provider-select">Provider</label>
+          <select id="agent-provider-select" class="form-input">
+            <option value="gemini">💎 Google Gemini</option>
+            <option value="openai">🧠 OpenAI (GPT)</option>
+            <option value="anthropic">🌟 Anthropic (Claude)</option>
+            <option value="openrouter">🚀 OpenRouter</option>
+            <option value="freemodel">🚀 Freemodel</option>
+            <option value="litert_lm">⚙️ LiteRT-LM (Local)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="agent-model-select">Model</label>
+          <select id="agent-model-select" class="form-input"></select>
+          <input type="text" id="agent-model-input" class="form-input" placeholder="Đường dẫn tuyệt đối file .litertlm" style="display:none" />
+        </div>
+        <div class="form-group">
+          <label for="agent-emoji-input">Emoji Avatar</label>
+          <input type="text" id="agent-emoji-input" class="form-input" placeholder="🤖" maxlength="2" />
+        </div>
+        <div class="form-group">
+          <label for="agent-apikey-input">API Key <span class="optional">(để trống dùng .env)</span></label>
+          <input type="password" id="agent-apikey-input" class="form-input" placeholder="sk-..." />
+        </div>
+        <div class="form-group">
+          <label for="agent-system-input">System Prompt <span class="optional">(tùy chọn)</span></label>
+          <textarea id="agent-system-input" class="form-input" rows="3" placeholder="Bạn là một chuyên gia..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="btn-cancel-agent">Hủy</button>
+        <button class="btn-primary" id="btn-save-agent">Lưu Agent</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Settings & Credentials ─────────────────── -->
+  <div class="modal-overlay" id="modal-settings" style="display:none">
+    <div class="modal modal-settings" id="modal-settings-content">
+      <div class="modal-header">
+        <h3>⚙️ Cài đặt & Xác thực</h3>
+        <button class="icon-btn" id="btn-close-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-body settings-body">
+
+        <!-- Gemini Section -->
+        <div class="settings-provider-card" id="settings-gemini">
+          <div class="provider-header">
+            <div class="provider-icon gemini-icon">💎</div>
+            <div class="provider-info">
+              <div class="provider-name">Google Gemini</div>
+              <div class="provider-status" id="gemini-status-text">Chưa cấu hình</div>
+            </div>
+            <span class="provider-badge" id="gemini-badge">–</span>
+          </div>
+
+          <!-- OAuth Login section -->
+          <div class="settings-section">
+            <div class="settings-section-title">🔐 Đăng nhập Google OAuth</div>
+            <p class="settings-hint">Đăng nhập bằng tài khoản Google để sử dụng Gemini mà không cần nhập API key thủ công.</p>
+            <div class="oauth-user-card" id="gemini-oauth-user" style="display:none">
+              <img class="oauth-avatar" id="gemini-oauth-avatar" src="" alt="" />
+              <div>
+                <div class="oauth-name" id="gemini-oauth-name"></div>
+                <div class="oauth-email" id="gemini-oauth-email"></div>
+              </div>
+              <button class="btn-danger-sm" id="btn-google-logout">Đăng xuất</button>
+            </div>
+            <button class="btn-google-login" id="btn-google-login">
+              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Đăng nhập với Google
+            </button>
+            <div class="settings-hint" style="margin-top: 8px">
+              Cần có <strong>client_secret.json</strong> trong thư mục <code>backend/</code><br>
+              hoặc nhập Client ID/Secret bên dưới.
+            </div>
+          </div>
+
+          <!-- Google OAuth Client setup -->
+          <details class="settings-details">
+            <summary>🔧 Cấu hình Google OAuth Client</summary>
+            <div class="settings-detail-body">
+              <p class="settings-hint">Tạo OAuth2 Web Client tại <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>.<br>
+              Redirect URI cần thêm: <code id="redirect-uri-display">http://localhost:8000/api/auth/google/callback</code></p>
+              <div class="form-group">
+                <label>Client ID</label>
+                <input type="text" id="google-client-id" class="form-input" placeholder="xxx.apps.googleusercontent.com" />
+              </div>
+              <div class="form-group" style="margin-top: 10px">
+                <label>Client Secret</label>
+                <input type="password" id="google-client-secret" class="form-input" placeholder="GOCSPX-..." />
+              </div>
+              <button class="btn-secondary" id="btn-save-google-client" style="margin-top: 10px">Lưu OAuth Client</button>
+            </div>
+          </details>
+
+          <!-- API Key alternative -->
+          <details class="settings-details">
+            <summary>🔑 Dùng API Key thay thế</summary>
+            <div class="settings-detail-body">
+              <p class="settings-hint">Lấy API key tại <a href="https://aistudio.google.com/app/api-keys" target="_blank">Google AI Studio</a></p>
+              <div class="api-key-row">
+                <input type="password" id="gemini-api-key-input" class="form-input" placeholder="AIza..." />
+                <button class="btn-secondary" id="btn-save-gemini-key">Lưu</button>
+                <button class="btn-danger-sm" id="btn-clear-gemini-key" title="Xóa key">✕</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- OpenAI Section -->
+        <div class="settings-provider-card" id="settings-openai">
+          <div class="provider-header">
+            <div class="provider-icon openai-icon">🧠</div>
+            <div class="provider-info">
+              <div class="provider-name">OpenAI (GPT)</div>
+              <div class="provider-status" id="openai-status-text">Chưa cấu hình</div>
+            </div>
+            <span class="provider-badge" id="openai-badge">–</span>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">🔑 API Key</div>
+            <p class="settings-hint">Lấy API key tại <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a></p>
+            <div class="api-key-row">
+              <input type="password" id="openai-api-key-input" class="form-input" placeholder="sk-..." />
+              <button class="btn-secondary" id="btn-save-openai-key">Lưu</button>
+              <button class="btn-danger-sm" id="btn-clear-openai-key" title="Xóa key">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anthropic Section -->
+        <div class="settings-provider-card" id="settings-anthropic">
+          <div class="provider-header">
+            <div class="provider-icon anthropic-icon">🌟</div>
+            <div class="provider-info">
+              <div class="provider-name">Anthropic (Claude)</div>
+              <div class="provider-status" id="anthropic-status-text">Chưa cấu hình</div>
+            </div>
+            <span class="provider-badge" id="anthropic-badge">–</span>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">🔑 API Key</div>
+            <p class="settings-hint">Lấy API key tại <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a></p>
+            <div class="api-key-row">
+              <input type="password" id="anthropic-api-key-input" class="form-input" placeholder="sk-ant-..." />
+              <button class="btn-secondary" id="btn-save-anthropic-key">Lưu</button>
+              <button class="btn-danger-sm" id="btn-clear-anthropic-key" title="Xóa key">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- OpenRouter Section -->
+        <div class="settings-provider-card" id="settings-openrouter">
+          <div class="provider-header">
+            <div class="provider-icon openrouter-icon">🚀</div>
+            <div class="provider-info">
+              <div class="provider-name">OpenRouter</div>
+              <div class="provider-status" id="openrouter-status-text">Chưa cấu hình</div>
+            </div>
+            <span class="provider-badge" id="openrouter-badge">–</span>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">🔑 API Key</div>
+            <p class="settings-hint">Lấy API key tại <a href="https://openrouter.ai/keys" target="_blank">OpenRouter Console</a></p>
+            <div class="api-key-row">
+              <input type="password" id="openrouter-api-key-input" class="form-input" placeholder="sk-or-..." />
+              <button class="btn-secondary" id="btn-save-openrouter-key">Lưu</button>
+              <button class="btn-danger-sm" id="btn-clear-openrouter-key" title="Xóa key">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Freemodel Section -->
+        <div class="settings-provider-card" id="settings-freemodel">
+          <div class="provider-header">
+            <div class="provider-icon freemodel-icon">🚀</div>
+            <div class="provider-info">
+              <div class="provider-name">Freemodel</div>
+              <div class="provider-status" id="freemodel-status-text">Chưa cấu hình</div>
+            </div>
+            <span class="provider-badge" id="freemodel-badge">–</span>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">🔑 API Key & Custom Base URL</div>
+            <p class="settings-hint">Lấy API key tại <a href="https://freemodel.dev/dashboard/docs#codex" target="_blank">Freemodel Dashboard</a></p>
+            <div class="api-key-row">
+              <input type="password" id="freemodel-api-key-input" class="form-input" placeholder="Key..." />
+              <button class="btn-secondary" id="btn-save-freemodel-key">Lưu</button>
+              <button class="btn-danger-sm" id="btn-clear-freemodel-key" title="Xóa key">✕</button>
+            </div>
+            <div class="form-group" style="margin-top: 10px">
+              <label style="font-size: 11px; margin-bottom: 2px">Custom Base URL <span class="optional">(Tùy chọn)</span></label>
+              <div class="api-key-row">
+                <input type="text" id="freemodel-base-url-input" class="form-input" placeholder="https://api.freemodel.dev/v1" />
+                <button class="btn-secondary" id="btn-save-freemodel-url">Lưu URL</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Drop Section -->
+        <div class="settings-provider-card">
+          <div class="provider-header">
+            <div class="provider-icon">📁</div>
+            <div class="provider-info">
+              <div class="provider-name">Credential Files</div>
+              <div class="provider-status">Kéo thả hoặc chọn file để tải lên trực tiếp</div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <!-- Upload Drag & Drop Zone -->
+            <div class="upload-zone" id="upload-zone">
+              <div class="upload-zone-content">
+                <span class="upload-icon">📤</span>
+                <span class="upload-text">Kéo thả hoặc click để tải lên <code>client_secret.json</code> hoặc <code>oauth_creds.json</code></span>
+                <input type="file" id="settings-file-input" style="display: none;" accept=".json" />
+              </div>
+            </div>
+
+            <div class="file-hint-grid">
+              <div class="file-hint-item" id="file-item-client_secret">
+                <div class="file-info-container">
+                  <code>client_secret.json</code>
+                  <span class="file-status-badge badge-not-set" id="badge-client-secret">Chưa có</span>
+                  <button class="btn-danger-xs" id="btn-delete-client-secret" style="display:none" title="Xóa file">✕</button>
+                </div>
+                <span>Google OAuth2 client (tải từ Google Cloud Console)</span>
+              </div>
+              
+              <div class="file-hint-item" id="file-item-oauth_creds">
+                <div class="file-info-container">
+                  <code>oauth_creds.json</code>
+                  <span class="file-status-badge badge-not-set" id="badge-oauth-creds">Chưa có</span>
+                  <button class="btn-danger-xs" id="btn-delete-oauth-creds" style="display:none" title="Xóa file">✕</button>
+                </div>
+                <span>Google OAuth token (tự động tạo sau khi đăng nhập)</span>
+              </div>
+
+              <div class="file-hint-item" id="file-item-credentials">
+                <div class="file-info-container">
+                  <code>credentials.json</code>
+                  <span class="file-status-badge badge-not-set" id="badge-credentials">Chưa có</span>
+                  <button class="btn-danger-xs" id="btn-delete-credentials" style="display:none" title="Xóa file">✕</button>
+                </div>
+                <span>API keys (tự động lưu khi nhập ở các phần trên)</span>
+              </div>
+
+              <div class="file-hint-item" id="file-item-env">
+                <div class="file-info-container">
+                  <code>.env</code>
+                  <span class="file-status-badge badge-not-set" id="badge-env">Chưa cấu hình</span>
+                </div>
+                <span>GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+      </div><!-- /.modal-body -->
+
+      <div class="modal-footer">
+        <button class="btn-ghost" id="btn-close-settings-footer">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Library Slide-Over Panel ─────────────────────────── -->
+  <div class="library-panel-overlay" id="library-panel-overlay" style="display:none"></div>
+  <div class="library-panel" id="library-panel">
+    <div class="library-panel-header">
+      <h3>🗂 Kho Agent</h3>
+      <button class="icon-btn" id="btn-close-library">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="library-panel-tabs">
+      <button class="lib-tab active" data-tab="agents">Agents của tôi</button>
+      <button class="lib-tab" data-tab="skills">Bộ Skill</button>
+    </div>
+    <div class="lib-panel" id="lib-panel-agents">
+      <div class="lib-toolbar">
+        <input type="text" class="lib-search" id="lib-search" placeholder="🔍 Tìm agent..." />
+        <button class="btn-primary" id="btn-lib-new-agent">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Tạo Agent
+        </button>
+      </div>
+      <div class="lib-agent-grid" id="lib-agent-grid">
+        <!-- Agent cards injected by JS -->
+      </div>
+    </div>
+    <div class="lib-panel" id="lib-panel-skills" style="display:none">
+      <p class="lib-skills-hint">Chọn một skill để áp dụng system prompt khi tạo agent mới</p>
+      <div class="lib-skill-grid" id="lib-skill-grid">
+        <!-- Skill cards injected by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Edit Library Agent ─────────────────────────── -->
+  <div class="modal-overlay" id="modal-lib-agent" style="display:none">
+    <div class="modal modal-sm" id="modal-lib-agent-content">
+      <div class="modal-header">
+        <h3 id="lib-agent-modal-title">Tạo Agent mới</h3>
+        <button class="icon-btn" id="btn-close-lib-agent">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Tên Agent</label>
+            <input type="text" id="lib-agent-name" class="form-input" placeholder="Ví dụ: Code Expert" />
+          </div>
+          <div class="form-group">
+            <label>Emoji</label>
+            <input type="text" id="lib-agent-emoji" class="form-input" placeholder="🤖" maxlength="2" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Mô tả <span class="optional">(tùy chọn)</span></label>
+          <input type="text" id="lib-agent-desc" class="form-input" placeholder="Agent này dùng để..." />
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Provider</label>
+            <select id="lib-agent-provider" class="form-input">
+              <option value="gemini">💎 Gemini</option>
+              <option value="openai">🧠 OpenAI</option>
+              <option value="anthropic">🌟 Anthropic</option>
+              <option value="openrouter">🚀 OpenRouter</option>
+              <option value="freemodel">🚀 Freemodel</option>
+              <option value="litert_lm">⚙️ LiteRT-LM (Local)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Model</label>
+            <select id="lib-agent-model" class="form-input"></select>
+            <input type="text" id="lib-agent-model-input" class="form-input" placeholder="Đường dẫn file .litertlm" style="display:none" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>API Key <span class="optional">(để trống dùng key global)</span></label>
+          <input type="password" id="lib-agent-apikey" class="form-input" placeholder="sk-..." />
+        </div>
+        <div class="form-group">
+          <div class="skill-label-row">
+            <label>System Prompt / Skill</label>
+            <button class="btn-pick-skill" id="btn-pick-skill" type="button">🎯 Chọn Skill</button>
+          </div>
+          <textarea id="lib-agent-system" class="form-input" rows="4" placeholder="Bạn là một chuyên gia..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer lib-agent-footer">
+        <button class="btn-ghost" id="btn-cancel-lib-agent">Hủy</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" id="btn-test-lib-agent">⚡ Kiểm tra</button>
+          <button class="btn-primary" id="btn-save-lib-agent">Lưu Agent</button>
+        </div>
+      </div>
+      <!-- Health check result -->
+      <div id="lib-health-result" class="health-result" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Skill Picker ────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-skill-picker" style="display:none">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>🎯 Chọn Skill</h3>
+        <button class="icon-btn" id="btn-close-skill-picker">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">Chọn một skill để tự động điền system prompt</p>
+        <div class="picker-skill-list" id="picker-skill-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
