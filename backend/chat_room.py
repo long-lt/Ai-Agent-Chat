@@ -25,6 +25,7 @@ def create_agent(agent_config: dict) -> BaseAgent:
         "system_prompt": agent_config.get("system_prompt", ""),
         "avatar_emoji": agent_config.get("avatar_emoji", "🤖"),
         "api_key": agent_config.get("api_key") or None,
+        "skill": agent_config.get("skill"),
     }
 
     if provider == "gemini":

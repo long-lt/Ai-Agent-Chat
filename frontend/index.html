@@ -181,10 +181,14 @@
           <label for="agent-emoji-input">Emoji Avatar</label>
           <input type="text" id="agent-emoji-input" class="form-input" placeholder="🤖" maxlength="2" />
         </div>
+        
         <div class="form-group">
-          <label for="agent-apikey-input">API Key <span class="optional">(để trống dùng .env)</span></label>
-          <input type="password" id="agent-apikey-input" class="form-input" placeholder="sk-..." />
+          <label>Kỹ năng (Skill) <span>(Tùy chọn)</span></label>
+          <select id="agent-skill-select" class="form-input">
+             <option value="">-- Tùy chỉnh (Không dùng skill) --</option>
+          </select>
         </div>
+
         <div class="form-group">
           <label for="agent-system-input">System Prompt <span class="optional">(tùy chọn)</span></label>
           <textarea id="agent-system-input" class="form-input" rows="3" placeholder="Bạn là một chuyên gia..."></textarea>
@@ -220,49 +224,9 @@
             <span class="provider-badge" id="gemini-badge">–</span>
           </div>
 
-          <!-- OAuth Login section -->
-          <div class="settings-section">
-            <div class="settings-section-title">🔐 Đăng nhập Google OAuth</div>
-            <p class="settings-hint">Đăng nhập bằng tài khoản Google để sử dụng Gemini mà không cần nhập API key thủ công.</p>
-            <div class="oauth-user-card" id="gemini-oauth-user" style="display:none">
-              <img class="oauth-avatar" id="gemini-oauth-avatar" src="" alt="" />
-              <div>
-                <div class="oauth-name" id="gemini-oauth-name"></div>
-                <div class="oauth-email" id="gemini-oauth-email"></div>
-              </div>
-              <button class="btn-danger-sm" id="btn-google-logout">Đăng xuất</button>
-            </div>
-            <button class="btn-google-login" id="btn-google-login">
-              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-              Đăng nhập với Google
-            </button>
-            <div class="settings-hint" style="margin-top: 8px">
-              Cần có <strong>client_secret.json</strong> trong thư mục <code>backend/</code><br>
-              hoặc nhập Client ID/Secret bên dưới.
-            </div>
-          </div>
-
-          <!-- Google OAuth Client setup -->
-          <details class="settings-details">
-            <summary>🔧 Cấu hình Google OAuth Client</summary>
-            <div class="settings-detail-body">
-              <p class="settings-hint">Tạo OAuth2 Web Client tại <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>.<br>
-              Redirect URI cần thêm: <code id="redirect-uri-display">http://localhost:8000/api/auth/google/callback</code></p>
-              <div class="form-group">
-                <label>Client ID</label>
-                <input type="text" id="google-client-id" class="form-input" placeholder="xxx.apps.googleusercontent.com" />
-              </div>
-              <div class="form-group" style="margin-top: 10px">
-                <label>Client Secret</label>
-                <input type="password" id="google-client-secret" class="form-input" placeholder="GOCSPX-..." />
-              </div>
-              <button class="btn-secondary" id="btn-save-google-client" style="margin-top: 10px">Lưu OAuth Client</button>
-            </div>
-          </details>
-
           <!-- API Key alternative -->
           <details class="settings-details">
-            <summary>🔑 Dùng API Key thay thế</summary>
+            <summary>🔑 API Key</summary>
             <div class="settings-detail-body">
               <p class="settings-hint">Lấy API key tại <a href="https://aistudio.google.com/app/api-keys" target="_blank">Google AI Studio</a></p>
               <div class="api-key-row">
@@ -365,54 +329,6 @@
           </div>
         </div>
 
-        <!-- File Drop Section -->
-        <div class="settings-provider-card">
-          <div class="provider-header">
-            <div class="provider-icon">📁</div>
-            <div class="provider-info">
-              <div class="provider-name">Credential Files</div>
-              <div class="provider-status">Kéo thả hoặc chọn file để tải lên trực tiếp</div>
-            </div>
-          </div>
-          <div class="settings-section">
-            <!-- Upload Drag & Drop Zone -->
-            <div class="upload-zone" id="upload-zone">
-              <div class="upload-zone-content">
-                <span class="upload-icon">📤</span>
-                <span class="upload-text">Kéo thả hoặc click để tải lên <code>client_secret.json</code> hoặc <code>oauth_creds.json</code></span>
-                <input type="file" id="settings-file-input" style="display: none;" accept=".json" />
-              </div>
-            </div>
-
-            <div class="file-hint-grid">
-              <div class="file-hint-item" id="file-item-client_secret">
-                <div class="file-info-container">
-                  <code>client_secret.json</code>
-                  <span class="file-status-badge badge-not-set" id="badge-client-secret">Chưa có</span>
-                  <button class="btn-danger-xs" id="btn-delete-client-secret" style="display:none" title="Xóa file">✕</button>
-                </div>
-                <span>Google OAuth2 client (tải từ Google Cloud Console)</span>
-              </div>
-              
-              <div class="file-hint-item" id="file-item-oauth_creds">
-                <div class="file-info-container">
-                  <code>oauth_creds.json</code>
-                  <span class="file-status-badge badge-not-set" id="badge-oauth-creds">Chưa có</span>
-                  <button class="btn-danger-xs" id="btn-delete-oauth-creds" style="display:none" title="Xóa file">✕</button>
-                </div>
-                <span>Google OAuth token (tự động tạo sau khi đăng nhập)</span>
-              </div>
-
-              <div class="file-hint-item" id="file-item-credentials">
-                <div class="file-info-container">
-                  <code>credentials.json</code>
-                  <span class="file-status-badge badge-not-set" id="badge-credentials">Chưa có</span>
-                  <button class="btn-danger-xs" id="btn-delete-credentials" style="display:none" title="Xóa file">✕</button>
-                </div>
-                <span>API keys (tự động lưu khi nhập ở các phần trên)</span>
-              </div>
-
-              <div class="file-hint-item" id="file-item-env">
                 <div class="file-info-container">
                   <code>.env</code>
                   <span class="file-status-badge badge-not-set" id="badge-env">Chưa cấu hình</span>

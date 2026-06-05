@@ -141,6 +141,7 @@ const els = {
   agentEmojiInput: $('agent-emoji-input'),
   agentApiKeyInput: $('agent-apikey-input'),
   agentSystemInput: $('agent-system-input'),
+  agentSkillSelect: $('agent-skill-select'),
 };
 
 // ── Model defaults by provider ─────────────────────────────────
@@ -866,6 +867,23 @@ function openAddAgentModal() {
   els.agentEmojiInput.value = '';
   els.agentApiKeyInput.value = '';
   els.agentSystemInput.value = '';
+
+  els.agentSkillSelect.innerHTML = '<option value="">-- Tùy chỉnh (Không dùng skill) --</option>';
+  state.skills.forEach(skill => {
+    const opt = document.createElement('option');
+    opt.value = skill.name;
+    opt.textContent = skill.name;
+    els.agentSkillSelect.appendChild(opt);
+  });
+
+  if (state.skills.length > 0) {
+    const defaultSkill = state.skills[0];
+    els.agentSkillSelect.value = defaultSkill.name;
+    els.agentSystemInput.value = defaultSkill.system_prompt;
+  } else {
+    els.agentSkillSelect.value = '';
+  }
+
   const inputEl = $('agent-model-input');
   if (inputEl) inputEl.value = '';
   updateAgentModelsDropdown();
@@ -882,7 +900,16 @@ async function openEditAgentModal(idx) {
   els.agentEmojiInput.value = agent.avatar_emoji || '';
   els.agentApiKeyInput.value = agent.api_key || '';
   els.agentSystemInput.value = agent.system_prompt || '';
-  
+
+  els.agentSkillSelect.innerHTML = '<option value="">-- Tùy chỉnh (Không dùng skill) --</option>';
+  state.skills.forEach(skill => {
+    const opt = document.createElement('option');
+    opt.value = skill.name;
+    opt.textContent = skill.name;
+    els.agentSkillSelect.appendChild(opt);
+  });
+  els.agentSkillSelect.value = agent.skill || '';
+
   await updateAgentModelsDropdown();
   if (agent.provider === 'litert_lm') {
     const inputEl = $('agent-model-input');
@@ -1024,6 +1051,7 @@ function saveAgent() {
     avatar_emoji: els.agentEmojiInput.value.trim() || def.emoji || '🤖',
     api_key: els.agentApiKeyInput.value.trim(),
     system_prompt: els.agentSystemInput.value.trim(),
+    skill: els.agentSkillSelect.value || null,
   };
 
   if (state.editingAgentIndex !== null && state.editingAgentIndex !== undefined) {
@@ -1081,20 +1109,7 @@ async function refreshSettingsStatus() {
     const configuredCount = ['gemini','openai','anthropic','openrouter','freemodel'].filter(p => status[p]?.method).length;
     updateSidebarAuthDot(configuredCount);
 
-    if (status.gemini?.has_oauth) {
-      try {
-        const oauthStatus = await apiGet('/api/auth/google/status');
-        if (oauthStatus.authenticated) {
-          showGoogleUser(oauthStatus);
-        } else {
-          hideGoogleUser();
-        }
-      } catch {
-        hideGoogleUser();
-      }
-    } else {
-      hideGoogleUser();
-    }
+
   } catch (e) {
     console.warn('Could not load settings status:', e);
   }
@@ -1121,152 +1136,7 @@ function updateProviderUI(provider, status) {
   }
 }
 
-function showGoogleUser(userInfo) {
-  const card = document.getElementById('gemini-oauth-user');
-  const avatar = document.getElementById('gemini-oauth-avatar');
-  const name = document.getElementById('gemini-oauth-name');
-  const email = document.getElementById('gemini-oauth-email');
-  const loginBtn = document.getElementById('btn-google-login');
 
-  if (card) card.style.display = 'flex';
-  if (loginBtn) loginBtn.style.display = 'none';
-  if (avatar && userInfo.picture) avatar.src = userInfo.picture;
-  if (name) name.textContent = userInfo.name || 'Google User';
-  if (email) email.textContent = userInfo.email || '';
-}
-
-function hideGoogleUser() {
-  const card = document.getElementById('gemini-oauth-user');
-  const loginBtn = document.getElementById('btn-google-login');
-  if (card) card.style.display = 'none';
-  if (loginBtn) loginBtn.style.display = 'inline-flex';
-}
-
-// ── Credential Files Management ────────────────────────────────
-function updateFilesUI(files) {
-  if (!files) return;
-
-  const items = {
-    client_secret: {
-      badge: $('badge-client-secret'),
-      btn: $('btn-delete-client-secret')
-    },
-    oauth_creds: {
-      badge: $('badge-oauth-creds'),
-      btn: $('btn-delete-oauth-creds')
-    },
-    credentials: {
-      badge: $('badge-credentials'),
-      btn: $('btn-delete-credentials')
-    },
-    env: {
-      badge: $('badge-env'),
-      btn: null
-    }
-  };
-
-  for (const [key, item] of Object.entries(items)) {
-    if (!item.badge) continue;
-    const exists = files[key];
-    if (exists) {
-      item.badge.textContent = key === 'env' ? 'Đã cấu hình' : 'Đã có';
-      item.badge.className = 'file-status-badge badge-set';
-      if (item.btn) item.btn.style.display = 'inline-flex';
-    } else {
-      item.badge.textContent = key === 'env' ? 'Chưa cấu hình' : 'Chưa có';
-      item.badge.className = 'file-status-badge badge-not-set';
-      if (item.btn) item.btn.style.display = 'none';
-    }
-  }
-}
-
-function setupUploadZone() {
-  const zone = $('upload-zone');
-  const input = $('settings-file-input');
-  if (!zone || !input) return;
-
-  // Click to open file dialog
-  zone.addEventListener('click', () => input.click());
-
-  // Drag over highlights
-  ['dragenter', 'dragover'].forEach(name => {
-    zone.addEventListener(name, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      zone.classList.add('dragover');
-    });
-  });
-
-  ['dragleave', 'drop'].forEach(name => {
-    zone.addEventListener(name, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      zone.classList.remove('dragover');
-    });
-  });
-
-  // Handle file drop
-  zone.addEventListener('drop', (e) => {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    if (files.length > 0) {
-      handleCredentialUpload(files[0]);
-    }
-  });
-
-  // Handle file input selection
-  input.addEventListener('change', () => {
-    if (input.files.length > 0) {
-      handleCredentialUpload(input.files[0]);
-      input.value = ''; // Reset input selection
-    }
-  });
-}
-
-async function handleCredentialUpload(file) {
-  if (!file.name.endsWith('.json')) {
-    showToast('⚠️ Chỉ chấp nhận các file định dạng JSON (.json)', 'error');
-    return;
-  }
-  if (!['client_secret.json', 'oauth_creds.json', 'credentials.json'].includes(file.name)) {
-    showToast('⚠️ Tên file phải là client_secret.json, oauth_creds.json hoặc credentials.json', 'error');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const r = await fetch(`${API_BASE}/api/settings/upload-file`, {
-      method: 'POST',
-      body: formData,
-    });
-    const res = await r.json();
-    if (!r.ok) throw new Error(res.detail || 'HTTP error');
-
-    showToast(`✅ Tải lên file ${file.name} thành công!`);
-    await refreshSettingsStatus();
-  } catch (e) {
-    showToast(`❌ Lỗi tải lên: ${e.message}`, 'error');
-  }
-}
-
-async function deleteCredentialFile(filename) {
-  if (!confirm(`Bạn chắc chắn muốn xóa file credentials "${filename}"?`)) return;
-
-  try {
-    const r = await fetch(`${API_BASE}/api/settings/file/${filename}`, {
-      method: 'DELETE',
-    });
-    const res = await r.json();
-    if (!r.ok) throw new Error(res.detail || 'HTTP error');
-
-    showToast(`🗑 Đã xóa file ${filename}`);
-    await refreshSettingsStatus();
-  } catch (e) {
-    showToast(`❌ Lỗi khi xóa file: ${e.message}`, 'error');
-  }
-}
 
 
 function updateSidebarAuthDot(configuredCount) {
@@ -1310,48 +1180,7 @@ async function clearApiKey(provider, inputId) {
   }
 }
 
-// ── Google OAuth Flow ──────────────────────────────────────────
-function startGoogleLogin() {
-  const popup = window.open(
-    '/api/auth/google/login',
-    'google-oauth',
-    'width=520,height=620,left=200,top=100,toolbar=no,menubar=no'
-  );
 
-  if (!popup) {
-    showToast('⚠️ Popup bị chặn. Hãy cho phép popup cho trang này.', 'error');
-    return;
-  }
-
-  const handler = async (event) => {
-    if (event.origin !== window.location.origin) return;
-    const msg = event.data;
-    if (!msg || msg.type === undefined) return;
-
-    window.removeEventListener('message', handler);
-
-    if (msg.type === 'oauth_success') {
-      showToast(`✅ Đăng nhập thành công! Xin chào ${msg.name}`);
-      await refreshSettingsStatus();
-      showGoogleUser({ name: msg.name, email: msg.email, picture: null });
-    } else if (msg.type === 'oauth_error') {
-      showToast(`❌ OAuth lỗi: ${msg.error}`, 'error');
-    }
-  };
-
-  window.addEventListener('message', handler);
-}
-
-async function googleLogout() {
-  try {
-    await fetch(`${API_BASE}/api/auth/google/logout`, { method: 'DELETE' });
-    hideGoogleUser();
-    await refreshSettingsStatus();
-    showToast('👋 Đã đăng xuất khỏi Google');
-  } catch (e) {
-    showToast(`❌ Lỗi: ${e.message}`, 'error');
-  }
-}
 
 // ── Toast Notifications ────────────────────────────────────────
 function showToast(message, type = 'success') {
@@ -2026,6 +1855,15 @@ function bindEvents() {
   $('btn-save-agent').addEventListener('click', saveAgent);
 
   els.agentProviderSelect.addEventListener('change', updateAgentModelsDropdown);
+  els.agentSkillSelect?.addEventListener('change', (e) => {
+    const skillName = e.target.value;
+    if (skillName) {
+      const skill = state.skills.find(s => s.name === skillName);
+      if (skill) {
+        els.agentSystemInput.value = skill.system_prompt;
+      }
+    }
+  });
 
   $('btn-room-settings').addEventListener('click', () => {
     if (!state.currentRoomId) return;
@@ -2061,27 +1899,7 @@ function bindEvents() {
     if (e.target === $('modal-settings')) closeSettings();
   });
 
-  // Google OAuth
-  $('btn-google-login').addEventListener('click', startGoogleLogin);
-  $('btn-google-logout').addEventListener('click', googleLogout);
 
-  // Google OAuth client save
-  $('btn-save-google-client').addEventListener('click', async () => {
-    const clientId = $('google-client-id').value.trim();
-    const clientSecret = $('google-client-secret').value.trim();
-    if (!clientId || !clientSecret) {
-      showToast('⚠️ Vui lòng nhập đầy đủ Client ID và Client Secret', 'error');
-      return;
-    }
-    try {
-      await apiPost('/api/settings/google-client', { client_id: clientId, client_secret: clientSecret });
-      showToast('✅ Google OAuth client đã lưu! Giờ có thể đăng nhập.');
-      $('google-client-id').value = '';
-      $('google-client-secret').value = '';
-    } catch (e) {
-      showToast(`❌ ${e.message}`, 'error');
-    }
-  });
 
   // API Key save/clear buttons
   $('btn-save-gemini-key').addEventListener('click', () => saveApiKey('gemini', 'gemini-api-key-input'));
@@ -2108,11 +1926,7 @@ function bindEvents() {
     }
   });
 
-  // Credential Files setup and delete events
-  setupUploadZone();
-  $('btn-delete-client-secret').addEventListener('click', () => deleteCredentialFile('client_secret.json'));
-  $('btn-delete-oauth-creds').addEventListener('click', () => deleteCredentialFile('oauth_creds.json'));
-  $('btn-delete-credentials').addEventListener('click', () => deleteCredentialFile('credentials.json'));
+
 
   // Close modal on overlay click
 

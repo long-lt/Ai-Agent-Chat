@@ -21,6 +21,7 @@ class BaseAgent(ABC):
         system_prompt: str = "",
         avatar_emoji: str = "🤖",
         api_key: Optional[str] = None,
+        skill: Optional[str] = None,
     ):
         self.name = name
         self.provider = provider
@@ -28,6 +29,7 @@ class BaseAgent(ABC):
         self.system_prompt = system_prompt
         self.avatar_emoji = avatar_emoji
         self.api_key = api_key
+        self.skill = skill
         self.color = generate_color_from_name(name)
 
     @abstractmethod
@@ -104,4 +106,5 @@ class BaseAgent(ABC):
             "avatar_emoji": self.avatar_emoji,
             "color": self.color,
             "system_prompt": self.system_prompt,
+            "skill": self.skill,
         }
