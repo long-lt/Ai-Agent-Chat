@@ -24,6 +24,7 @@ class LiteRTLMAgent(BaseAgent):
         system_prompt: str = "",
         avatar_emoji: str = "⚙️",
         api_key: Optional[str] = None,
+        skill: Optional[str] = None,
     ):
         super().__init__(
             name=name,
@@ -32,6 +33,7 @@ class LiteRTLMAgent(BaseAgent):
             system_prompt=system_prompt,
             avatar_emoji=avatar_emoji,
             api_key=api_key,
+            skill=skill,
         )
 
     async def chat_stream(
