@@ -2031,8 +2031,6 @@ function bindEvents() {
 
   // Credential Files setup and delete events
   setupUploadZone();
-  $('btn-delete-client-secret').addEventListener('click', () => deleteCredentialFile('client_secret.json'));
-  $('btn-delete-oauth-creds').addEventListener('click', () => deleteCredentialFile('oauth_creds.json'));
   $('btn-delete-credentials').addEventListener('click', () => deleteCredentialFile('credentials.json'));
 
   // Close modal on overlay click
