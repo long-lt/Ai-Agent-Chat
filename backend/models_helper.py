@@ -1,6 +1,7 @@
 import asyncio
 from fastapi import HTTPException
-import config
+from auth import get_store
+import auth as auth_module
 
 async def get_provider_models(provider: str, api_key: str = None) -> list[str]:
     """
@@ -15,9 +16,9 @@ async def get_provider_models(provider: str, api_key: str = None) -> list[str]:
     if provider == "litert_lm":
         return []
 
-    resolved_key = api_key
-    if not resolved_key and provider == "gemini" and hasattr(config, "GEMINI_API_KEY"):
-        resolved_key = config.GEMINI_API_KEY
+    # Resolve API Key
+    store = get_store()
+    resolved_key = api_key or store.get_api_key(provider)
 
     # ── Gemini ──
     if provider == "gemini":
@@ -50,6 +51,10 @@ async def get_provider_models(provider: str, api_key: str = None) -> list[str]:
             client = None
             if resolved_key:
                 client = genai.Client(api_key=resolved_key)
+            else:
+                creds = auth_module.get_google_credentials()
+                if creds:
+                    client = genai.Client(credentials=creds)
 
             if client:
                 def fetch_gemini():

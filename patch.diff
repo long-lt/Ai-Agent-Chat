@@ -1,0 +1,1397 @@
+commit 2995d28c46b46b564563952ae1e00d8cce02e0fc
+Author: longlt <longlt1@tahospital.vn>
+Date:   Fri Jun 5 17:03:19 2026 +0700
+
+    feat: add skill attribute to agents and update related components
+    
+    - Added optional skill attribute to BaseAgent and GeminiAgent classes.
+    - Updated create_agent function to include skill in agent configuration.
+    - Enhanced frontend to support skill selection for agents in modals.
+    - Removed deprecated authentication and settings API endpoints.
+
+diff --git a/backend/agents/base_agent.py b/backend/agents/base_agent.py
+index 4c52fe8..0812fbb 100644
+--- a/backend/agents/base_agent.py
++++ b/backend/agents/base_agent.py
+@@ -21,6 +21,7 @@ class BaseAgent(ABC):
+         system_prompt: str = "",
+         avatar_emoji: str = "🤖",
+         api_key: Optional[str] = None,
++        skill: Optional[str] = None,
+     ):
+         self.name = name
+         self.provider = provider
+@@ -28,6 +29,7 @@ class BaseAgent(ABC):
+         self.system_prompt = system_prompt
+         self.avatar_emoji = avatar_emoji
+         self.api_key = api_key
++        self.skill = skill
+         self.color = generate_color_from_name(name)
+ 
+     @abstractmethod
+@@ -104,4 +106,5 @@ class BaseAgent(ABC):
+             "avatar_emoji": self.avatar_emoji,
+             "color": self.color,
+             "system_prompt": self.system_prompt,
++            "skill": self.skill,
+         }
+diff --git a/backend/agents/gemini_agent.py b/backend/agents/gemini_agent.py
+index 0fc38cf..9f5cdc0 100644
+--- a/backend/agents/gemini_agent.py
++++ b/backend/agents/gemini_agent.py
+@@ -18,10 +18,9 @@ class GeminiAgent(BaseAgent):
+     """
+     AI Agent powered by Google Gemini.
+ 
+-    Authentication priority (highest → lowest):
++    Authentication priority:
+       1. room-specific api_key passed to __init__
+-      2. Global credential store (credentials.json / .env)
+-      3. Google OAuth2 token (oauth_creds.json)
++      2. Global environment variable (.env)
+     """
+ 
+     def __init__(
+@@ -31,6 +30,7 @@ class GeminiAgent(BaseAgent):
+         system_prompt: str = "",
+         avatar_emoji: str = "💎",
+         api_key: Optional[str] = None,
++        skill: Optional[str] = None,
+     ):
+         super().__init__(
+             name=name,
+@@ -39,6 +39,7 @@ class GeminiAgent(BaseAgent):
+             system_prompt=system_prompt,
+             avatar_emoji=avatar_emoji,
+             api_key=api_key,
++            skill=skill,
+         )
+ 
+     def _resolve_api_key(self) -> Optional[str]:
+@@ -47,15 +48,12 @@ class GeminiAgent(BaseAgent):
+         if self.api_key and self.api_key.strip():
+             return self.api_key.strip()
+ 
+-        # 2. Global credential store
+-        try:
+-            from auth import get_store
+-            stored = get_store().get_api_key("gemini")
+-            if stored:
+-                return stored
+-        except ImportError:
+-            pass
+-
++        # 2. Global environment variable (.env)
++        import os
++        from config import GEMINI_API_KEY
++        if GEMINI_API_KEY:
++            return GEMINI_API_KEY
++            
+         return None
+ 
+     async def chat_stream(
+@@ -65,21 +63,19 @@ class GeminiAgent(BaseAgent):
+         context_agent: Optional[str] = None,
+         room_agents: Optional[list[str]] = None,
+     ) -> AsyncGenerator[str, None]:
+-        """Stream a response, choosing auth method automatically."""
++        """Stream a response, using API Key auth."""
+         api_key = self._resolve_api_key()
+ 
+         if api_key:
+-            # ── Mode 1: API Key via Antigravity SDK ──────────────
+             async for token in self._stream_with_antigravity(
+                 api_key, messages, context_response, context_agent, room_agents
+             ):
+                 yield token
+         else:
+-            # ── Mode 2: Google OAuth2 via google-genai ───────────
+-            async for token in self._stream_with_oauth(
+-                messages, context_response, context_agent, room_agents
+-            ):
+-                yield token
++            yield (
++                "⚠️ **Gemini chưa được xác thực.**\n\n"
++                "Hãy cấu hình GEMINI_API_KEY trong file .env."
++            )
+ 
+     async def _stream_with_antigravity(
+         self,
+@@ -114,57 +110,6 @@ class GeminiAgent(BaseAgent):
+                 if token:
+                     yield token
+ 
+-    async def _stream_with_oauth(
+-        self,
+-        messages: list[dict],
+-        context_response: Optional[str],
+-        context_agent: Optional[str],
+-        room_agents: Optional[list[str]] = None,
+-    ) -> AsyncGenerator[str, None]:
+-        """Stream using Google OAuth2 credentials via google-genai."""
+-        if not HAS_GENAI:
+-            yield (
+-                "⚠️ **Gemini chưa được xác thực.**\n\n"
+-                "Hãy vào **Settings → Gemini** để:\n"
+-                "- Nhập API key, hoặc\n"
+-                "- Login bằng Google OAuth"
+-            )
+-            return
+-
+-        try:
+-            from auth import get_google_credentials
+-        except ImportError:
+-            yield "⚠️ Lỗi import auth module."
+-            return
+-
+-        creds = get_google_credentials()
+-        if not creds:
+-            yield (
+-                "⚠️ **Gemini chưa được xác thực.**\n\n"
+-                "Hãy vào **⚙️ Settings → Gemini** và login bằng Google, "
+-                "hoặc nhập API Key."
+-            )
+-            return
+-
+-        system_prompt = self.build_system_prompt_with_context(
+-            context_response, context_agent, room_agents
+-        )
+-        prompt = self._build_full_prompt(messages, system_prompt)
+-
+-        try:
+-            client = google_genai.Client(credentials=creds)
+-            model_id = self.model or "gemini-2.0-flash"
+-
+-            response = client.models.generate_content_stream(
+-                model=model_id,
+-                contents=prompt,
+-            )
+-            for chunk in response:
+-                if chunk.text:
+-                    yield chunk.text
+-        except Exception as e:
+-            yield f"⚠️ Lỗi Gemini OAuth: {e}"
+-
+     def _format_messages_as_prompt(self, messages: list[dict]) -> str:
+         """Format history as a simple text prompt for Antigravity SDK."""
+         if not messages:
+@@ -176,12 +121,5 @@ class GeminiAgent(BaseAgent):
+             if role == "user":
+                 lines.append(f"User: {content}")
+             else:
+-                agent_name = msg.get("agent_name", role)
+-                lines.append(f"{agent_name}: {content}")
+-        return "\n".join(lines)
+-
+-    def _build_full_prompt(self, messages: list[dict], system_prompt: str) -> str:
+-        """Build full prompt including system instructions for direct genai usage."""
+-        parts = [f"[System]: {system_prompt}\n"] if system_prompt else []
+-        parts.append(self._format_messages_as_prompt(messages))
+-        return "\n".join(parts)
++                lines.append(f"AI: {content}")
++        return "\n\n".join(lines)
+diff --git a/backend/auth.py b/backend/auth.py
+deleted file mode 100644
+index 7185ce2..0000000
+--- a/backend/auth.py
++++ /dev/null
+@@ -1,394 +0,0 @@
+-"""
+-auth.py — Credential Management & Google OAuth2 Flow
+-
+-Credential resolution order (priority, high → low):
+-  1. Room-specific api_key (entered per-room)
+-  2. credentials.json (saved via Settings UI or file drop)
+-  3. .env / environment variables
+-  4. Google OAuth token (for Gemini only)
+-
+-Files in backend/:
+-  credentials.json  — saved API keys for all providers
+-  oauth_creds.json  — Google OAuth2 tokens
+-  client_secret.json — (optional) Google OAuth2 client credentials
+-"""
+-
+-import json
+-import os
+-import secrets
+-import logging
+-from pathlib import Path
+-from typing import Optional
+-
+-logger = logging.getLogger(__name__)
+-
+-# ── File paths ─────────────────────────────────────────────────
+-BACKEND_DIR = Path(__file__).parent
+-CREDS_FILE = BACKEND_DIR / "credentials.json"
+-OAUTH_CREDS_FILE = BACKEND_DIR / "oauth_creds.json"
+-CLIENT_SECRET_FILE = BACKEND_DIR / "client_secret.json"
+-
+-# Google OAuth scopes needed for Gemini API
+-GOOGLE_SCOPES = [
+-    "https://www.googleapis.com/auth/generative-language",
+-    "openid",
+-    "https://www.googleapis.com/auth/userinfo.email",
+-    "https://www.googleapis.com/auth/userinfo.profile",
+-]
+-
+-# In-memory state for OAuth flow (state token → flow)
+-_pending_flows: dict[str, object] = {}
+-
+-
+-# ══════════════════════════════════════════════════════════════
+-# Credential Store
+-# ══════════════════════════════════════════════════════════════
+-
+-class CredentialStore:
+-    """
+-    Persistent JSON-based credential store.
+-    Handles API keys and OAuth tokens for all providers.
+-    """
+-
+-    def __init__(self):
+-        self._data: dict = self._load()
+-
+-    def _load(self) -> dict:
+-        if CREDS_FILE.exists():
+-            try:
+-                with open(CREDS_FILE) as f:
+-                    return json.load(f)
+-            except Exception as e:
+-                logger.warning(f"Could not load credentials.json: {e}")
+-        return {}
+-
+-    def _save(self):
+-        try:
+-            with open(CREDS_FILE, "w") as f:
+-                json.dump(self._data, f, indent=2)
+-        except Exception as e:
+-            logger.error(f"Could not save credentials.json: {e}")
+-
+-    def set_api_key(self, provider: str, key: str):
+-        """Save an API key for a provider."""
+-        if provider not in self._data:
+-            self._data[provider] = {}
+-        self._data[provider]["api_key"] = key
+-        self._save()
+-
+-    def delete_api_key(self, provider: str):
+-        """Remove a stored API key."""
+-        if provider in self._data:
+-            self._data[provider].pop("api_key", None)
+-            self._save()
+-
+-    def get_api_key(self, provider: str) -> Optional[str]:
+-        """
+-        Get API key using priority chain:
+-        credentials.json > environment variable
+-        """
+-        # 1. credentials.json
+-        stored = self._data.get(provider, {}).get("api_key", "")
+-        if stored and stored.strip():
+-            return stored.strip()
+-
+-        # 2. Environment variable
+-        env_map = {
+-            "gemini": "GEMINI_API_KEY",
+-            "openai": "OPENAI_API_KEY",
+-            "anthropic": "ANTHROPIC_API_KEY",
+-            "openrouter": "OPENROUTER_API_KEY",
+-            "freemodel": "FREEMODEL_API_KEY",
+-        }
+-        env_val = os.getenv(env_map.get(provider, ""), "")
+-        if env_val and env_val.strip() and env_val.strip() != f"your_{provider}_api_key_here":
+-            return env_val.strip()
+-
+-        return None
+-
+-    def set_base_url(self, provider: str, url: str):
+-        """Save a base URL for a provider."""
+-        if provider not in self._data:
+-            self._data[provider] = {}
+-        self._data[provider]["base_url"] = url
+-        self._save()
+-
+-    def get_base_url(self, provider: str) -> Optional[str]:
+-        """Get base URL using credentials.json > environment variable > default."""
+-        stored = self._data.get(provider, {}).get("base_url", "")
+-        if stored and stored.strip():
+-            return stored.strip()
+-
+-        if provider == "freemodel":
+-            env_val = os.getenv("FREEMODEL_BASE_URL", "")
+-            if env_val and env_val.strip():
+-                return env_val.strip()
+-            return "https://api.freemodel.dev/v1"
+-            
+-        elif provider == "openrouter":
+-            env_val = os.getenv("OPENROUTER_BASE_URL", "")
+-            if env_val and env_val.strip():
+-                return env_val.strip()
+-            return "https://openrouter.ai/api/v1"
+-
+-        return None
+-
+-    def get_oauth_token(self) -> Optional[dict]:
+-        """Get Google OAuth token data from file or stored creds."""
+-        # 1. Check oauth_creds.json drop file
+-        if OAUTH_CREDS_FILE.exists():
+-            try:
+-                with open(OAUTH_CREDS_FILE) as f:
+-                    data = json.load(f)
+-                    # Support both formats
+-                    if "installed" in data or "web" in data:
+-                        # This is a client_secret.json, not a token file
+-                        return None
+-                    return data
+-            except Exception:
+-                pass
+-
+-        # 2. Stored in credentials.json
+-        return self._data.get("gemini", {}).get("oauth_token")
+-
+-    def save_oauth_token(self, token_data: dict):
+-        """Persist Google OAuth token."""
+-        if "gemini" not in self._data:
+-            self._data["gemini"] = {}
+-        self._data["gemini"]["oauth_token"] = token_data
+-        self._save()
+-        # Also write to oauth_creds.json for easy access
+-        with open(OAUTH_CREDS_FILE, "w") as f:
+-            json.dump(token_data, f, indent=2)
+-
+-    def delete_oauth_token(self):
+-        """Remove Google OAuth token."""
+-        if "gemini" in self._data:
+-            self._data["gemini"].pop("oauth_token", None)
+-            self._save()
+-        if OAUTH_CREDS_FILE.exists():
+-            OAUTH_CREDS_FILE.unlink()
+-
+-    def get_google_client_config(self) -> Optional[dict]:
+-        """Get OAuth2 client credentials (client_id + client_secret)."""
+-        # 1. client_secret.json file (downloaded from Google Cloud Console)
+-        if CLIENT_SECRET_FILE.exists():
+-            try:
+-                with open(CLIENT_SECRET_FILE) as f:
+-                    data = json.load(f)
+-                    # Standard format: {"web": {...}} or {"installed": {...}}
+-                    cfg = data.get("web") or data.get("installed")
+-                    if cfg:
+-                        return cfg
+-            except Exception:
+-                pass
+-
+-        # 2. Stored in credentials.json (entered via Settings UI)
+-        return self._data.get("google_client")
+-
+-    def save_google_client_config(self, client_id: str, client_secret: str):
+-        """Store OAuth2 client credentials entered via UI."""
+-        self._data["google_client"] = {
+-            "client_id": client_id,
+-            "client_secret": client_secret,
+-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+-            "token_uri": "https://oauth2.googleapis.com/token",
+-        }
+-        self._save()
+-
+-    def get_status(self) -> dict:
+-        """Return auth status summary for each provider."""
+-        has_oauth = bool(self.get_oauth_token())
+-        has_client_cfg = bool(self.get_google_client_config())
+-        # Check if environment variables are configured with non-default values
+-        has_env_keys = any(
+-            os.getenv(k) and os.getenv(k) != f"your_{provider}_api_key_here"
+-            for k, provider in [
+-                ("GEMINI_API_KEY", "gemini"),
+-                ("OPENAI_API_KEY", "openai"),
+-                ("ANTHROPIC_API_KEY", "anthropic"),
+-                ("OPENROUTER_API_KEY", "openrouter"),
+-                ("FREEMODEL_API_KEY", "freemodel"),
+-            ]
+-        )
+-        return {
+-            "gemini": {
+-                "method": "oauth" if has_oauth else ("api_key" if self.get_api_key("gemini") else None),
+-                "has_api_key": bool(self.get_api_key("gemini")),
+-                "has_oauth": has_oauth,
+-                "can_do_oauth": has_client_cfg,
+-                "has_client_secret_file": CLIENT_SECRET_FILE.exists(),
+-            },
+-            "openai": {
+-                "method": "api_key" if self.get_api_key("openai") else None,
+-                "has_api_key": bool(self.get_api_key("openai")),
+-            },
+-            "anthropic": {
+-                "method": "api_key" if self.get_api_key("anthropic") else None,
+-                "has_api_key": bool(self.get_api_key("anthropic")),
+-            },
+-            "openrouter": {
+-                "method": "api_key" if self.get_api_key("openrouter") else None,
+-                "has_api_key": bool(self.get_api_key("openrouter")),
+-            },
+-            "freemodel": {
+-                "method": "api_key" if self.get_api_key("freemodel") else None,
+-                "has_api_key": bool(self.get_api_key("freemodel")),
+-                "base_url": self.get_base_url("freemodel"),
+-            },
+-            "files": {
+-                "client_secret": CLIENT_SECRET_FILE.exists(),
+-                "oauth_creds": OAUTH_CREDS_FILE.exists(),
+-                "credentials": CREDS_FILE.exists(),
+-                "env": has_env_keys,
+-            }
+-        }
+-
+-
+-
+-# Singleton instance
+-_store: Optional[CredentialStore] = None
+-
+-def get_store() -> CredentialStore:
+-    global _store
+-    if _store is None:
+-        _store = CredentialStore()
+-    return _store
+-
+-
+-# ══════════════════════════════════════════════════════════════
+-# Google OAuth2 Web Flow
+-# ══════════════════════════════════════════════════════════════
+-
+-def start_google_oauth(redirect_uri: str) -> tuple[str, str]:
+-    """
+-    Initiate Google OAuth2 flow.
+-
+-    Returns:
+-        (authorization_url, state_token)
+-
+-    Raises:
+-        ValueError if no client credentials are configured.
+-    """
+-    from google_auth_oauthlib.flow import Flow
+-
+-    store = get_store()
+-    client_config = store.get_google_client_config()
+-    if not client_config:
+-        raise ValueError(
+-            "Google OAuth2 client not configured. "
+-            "Place client_secret.json in the backend directory "
+-            "or enter Client ID + Secret in Settings."
+-        )
+-
+-    state = secrets.token_urlsafe(32)
+-
+-    if CLIENT_SECRET_FILE.exists():
+-        flow = Flow.from_client_secrets_file(
+-            str(CLIENT_SECRET_FILE),
+-            scopes=GOOGLE_SCOPES,
+-            redirect_uri=redirect_uri,
+-            state=state,
+-        )
+-    else:
+-        flow = Flow.from_client_config(
+-            {"web": client_config},
+-            scopes=GOOGLE_SCOPES,
+-            redirect_uri=redirect_uri,
+-            state=state,
+-        )
+-
+-    auth_url, _ = flow.authorization_url(
+-        access_type="offline",
+-        include_granted_scopes="true",
+-        prompt="consent",
+-    )
+-
+-    # Store flow object keyed by state
+-    _pending_flows[state] = flow
+-    return auth_url, state
+-
+-
+-def complete_google_oauth(code: str, state: str) -> dict:
+-    """
+-    Complete OAuth2 flow after Google redirects back.
+-
+-    Returns token data dict to be saved.
+-    """
+-    flow = _pending_flows.pop(state, None)
+-    if not flow:
+-        raise ValueError("Invalid or expired OAuth state. Please try again.")
+-
+-    # Exchange authorization code for tokens
+-    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")  # allow http for localhost
+-    flow.fetch_token(code=code)
+-    creds = flow.credentials
+-
+-    token_data = {
+-        "token": creds.token,
+-        "refresh_token": creds.refresh_token,
+-        "token_uri": creds.token_uri,
+-        "client_id": creds.client_id,
+-        "client_secret": creds.client_secret,
+-        "scopes": list(creds.scopes) if creds.scopes else GOOGLE_SCOPES,
+-    }
+-
+-    # Persist tokens
+-    get_store().save_oauth_token(token_data)
+-    return token_data
+-
+-
+-def get_google_credentials():
+-    """
+-    Get valid (possibly refreshed) Google OAuth2 Credentials object.
+-    Returns None if no OAuth tokens are stored.
+-    """
+-    try:
+-        from google.oauth2.credentials import Credentials
+-        from google.auth.transport.requests import Request
+-    except ImportError:
+-        return None
+-
+-    store = get_store()
+-    token_data = store.get_oauth_token()
+-    if not token_data:
+-        return None
+-
+-    creds = Credentials(
+-        token=token_data.get("token"),
+-        refresh_token=token_data.get("refresh_token"),
+-        token_uri=token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
+-        client_id=token_data.get("client_id"),
+-        client_secret=token_data.get("client_secret"),
+-        scopes=token_data.get("scopes", GOOGLE_SCOPES),
+-    )
+-
+-    # Auto-refresh if expired
+-    if creds.expired and creds.refresh_token:
+-        try:
+-            creds.refresh(Request())
+-            # Save refreshed token
+-            token_data["token"] = creds.token
+-            store.save_oauth_token(token_data)
+-            logger.info("Google OAuth token refreshed successfully")
+-        except Exception as e:
+-            logger.error(f"Failed to refresh Google token: {e}")
+-            return None
+-
+-    return creds
+-
+-
+-def get_google_user_info(creds) -> Optional[dict]:
+-    """Fetch Google user profile using OAuth credentials."""
+-    try:
+-        import requests
+-        resp = requests.get(
+-            "https://www.googleapis.com/oauth2/v2/userinfo",
+-            headers={"Authorization": f"Bearer {creds.token}"},
+-            timeout=5,
+-        )
+-        if resp.ok:
+-            return resp.json()
+-    except Exception:
+-        pass
+-    return None
+diff --git a/backend/chat_room.py b/backend/chat_room.py
+index f517561..5f35bc3 100644
+--- a/backend/chat_room.py
++++ b/backend/chat_room.py
+@@ -25,6 +25,7 @@ def create_agent(agent_config: dict) -> BaseAgent:
+         "system_prompt": agent_config.get("system_prompt", ""),
+         "avatar_emoji": agent_config.get("avatar_emoji", "🤖"),
+         "api_key": agent_config.get("api_key") or None,
++        "skill": agent_config.get("skill"),
+     }
+ 
+     if provider == "gemini":
+diff --git a/backend/main.py b/backend/main.py
+index 0721a97..d330591 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -10,8 +10,6 @@ from pydantic import BaseModel
+ 
+ import database
+ import config
+-import auth as auth_module
+-from auth import get_store
+ from chat_room import ChatRoom, create_agent
+ import agent_library as lib_module
+ from agent_library import get_library, BUILTIN_SKILLS, check_agent_health
+@@ -85,7 +83,7 @@ async def create_room(req: CreateRoomRequest):
+ 
+     # Persist to DB (store config without sensitive api_key)
+     agents_config = [
+-        {**a, "api_key": a.get("api_key", "")}
++        {k: v for k, v in a.items() if k != "api_key"}
+         for a in req.agents
+     ]
+     await database.save_room(room_id, req.name, agents_config)
+@@ -161,7 +159,7 @@ async def update_room(room_id: str, req: CreateRoomRequest):
+ 
+     # Persist to DB
+     agents_config = [
+-        {**a, "api_key": a.get("api_key", "")}
++        {k: v for k, v in a.items() if k != "api_key"}
+         for a in req.agents
+     ]
+     await database.save_room(room_id, req.name, agents_config)
+@@ -210,253 +208,7 @@ async def list_provider_models(provider: str, api_key: str = None):
+ 
+ 
+ 
+-# ── Settings & Credentials API ────────────────────────────────────────────────
+ 
+-@app.get("/api/settings/status")
+-async def settings_status():
+-    """Return auth/credential status for all providers."""
+-    return get_store().get_status()
+-
+-
+-class SaveKeyRequest(BaseModel):
+-    provider: str
+-    api_key: str
+-
+-
+-@app.post("/api/settings/api-key")
+-async def save_api_key(req: SaveKeyRequest):
+-    """Save an API key for a provider to credentials.json."""
+-    if req.provider not in ("gemini", "openai", "anthropic", "openrouter", "freemodel"):
+-        raise HTTPException(status_code=400, detail="Unknown provider")
+-    if not req.api_key.strip():
+-        get_store().delete_api_key(req.provider)
+-        return {"ok": True, "message": f"{req.provider} API key removed"}
+-    get_store().set_api_key(req.provider, req.api_key.strip())
+-    return {"ok": True, "message": f"{req.provider} API key saved"}
+-
+-
+-class SaveBaseUrlRequest(BaseModel):
+-    provider: str
+-    base_url: str
+-
+-
+-@app.post("/api/settings/base-url")
+-async def save_base_url(req: SaveBaseUrlRequest):
+-    """Save a base URL for a provider to credentials.json."""
+-    if req.provider not in ("gemini", "openai", "anthropic", "openrouter", "freemodel"):
+-        raise HTTPException(status_code=400, detail="Unknown provider")
+-    if not req.base_url.strip():
+-        get_store().set_base_url(req.provider, "")
+-        return {"ok": True, "message": f"{req.provider} Base URL cleared"}
+-    get_store().set_base_url(req.provider, req.base_url.strip())
+-    return {"ok": True, "message": f"{req.provider} Base URL saved"}
+-
+-
+-@app.delete("/api/settings/api-key/{provider}")
+-async def delete_api_key(provider: str):
+-    """Remove a saved API key."""
+-    get_store().delete_api_key(provider)
+-    return {"ok": True}
+-
+-
+-class SaveGoogleClientRequest(BaseModel):
+-    client_id: str
+-    client_secret: str
+-
+-
+-@app.post("/api/settings/google-client")
+-async def save_google_client(req: SaveGoogleClientRequest):
+-    """Save Google OAuth2 client credentials."""
+-    if not req.client_id.strip() or not req.client_secret.strip():
+-        raise HTTPException(status_code=400, detail="client_id and client_secret are required")
+-    get_store().save_google_client_config(req.client_id.strip(), req.client_secret.strip())
+-    return {"ok": True, "message": "Google OAuth client saved"}
+-
+-
+-@app.post("/api/settings/upload-file")
+-async def upload_credential_file(file: UploadFile):
+-    """Upload a credential file (client_secret.json or oauth_creds.json)."""
+-    filename = file.filename
+-    if filename not in ("client_secret.json", "oauth_creds.json", "credentials.json"):
+-        raise HTTPException(
+-            status_code=400,
+-            detail="Chỉ chấp nhận các file: client_secret.json, oauth_creds.json, credentials.json"
+-        )
+-
+-    # Read and parse JSON content to ensure it is valid
+-    try:
+-        content = await file.read()
+-        data = json.loads(content)
+-    except json.JSONDecodeError:
+-        raise HTTPException(status_code=400, detail="File không phải định dạng JSON hợp lệ.")
+-    except Exception as e:
+-        raise HTTPException(status_code=400, detail=f"Lỗi đọc file: {str(e)}")
+-
+-    dest_path = auth_module.BACKEND_DIR / filename
+-    try:
+-        with open(dest_path, "w") as f:
+-            json.dump(data, f, indent=2)
+-
+-        # Clear active store caching if config files changed
+-        if filename == "credentials.json":
+-            auth_module._store = None
+-
+-        return {"ok": True, "message": f"Đã lưu file {filename} thành công!"}
+-    except Exception as e:
+-        raise HTTPException(status_code=500, detail=f"Lỗi khi lưu file: {str(e)}")
+-
+-
+-@app.delete("/api/settings/file/{filename}")
+-async def delete_credential_file(filename: str):
+-    """Delete an uploaded credential file."""
+-    if filename not in ("client_secret.json", "oauth_creds.json", "credentials.json"):
+-        raise HTTPException(status_code=400, detail="Tên file không hợp lệ")
+-
+-    dest_path = auth_module.BACKEND_DIR / filename
+-    if dest_path.exists():
+-        try:
+-            dest_path.unlink()
+-            if filename == "credentials.json":
+-                auth_module._store = None
+-            return {"ok": True, "message": f"Đã xóa file {filename}"}
+-        except Exception as e:
+-            raise HTTPException(status_code=500, detail=f"Lỗi khi xóa file: {str(e)}")
+-    else:
+-        raise HTTPException(status_code=404, detail="File không tồn tại")
+-
+-
+-
+-# ── Google OAuth2 Flow ────────────────────────────────────────────────────────
+-
+-@app.get("/api/auth/google/login")
+-async def google_oauth_login(request: Request):
+-    """Initiate Google OAuth2 login flow."""
+-    redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/google/callback"
+-    try:
+-        auth_url, state = auth_module.start_google_oauth(redirect_uri)
+-        return RedirectResponse(url=auth_url)
+-    except ValueError as e:
+-        # Return a helpful HTML page instead of bare error
+-        html = f"""
+-        <!DOCTYPE html><html><head>
+-        <title>OAuth Setup Required</title>
+-        <style>
+-          body {{ font-family: system-ui; background: #0e1221; color: #e8eaf2;
+-                 display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }}
+-          .box {{ background: #1c2236; border: 1px solid rgba(255,255,255,0.1);
+-                  border-radius: 16px; padding: 32px; max-width: 520px; }}
+-          h2 {{ color: #f87171; margin-bottom: 16px; }}
+-          pre {{ background: #0d1117; padding: 14px; border-radius: 8px; font-size: 13px;
+-                 overflow-x: auto; white-space: pre-wrap; }}
+-          a {{ color: #7c7fff; }}
+-          .btn {{ display: inline-block; margin-top: 20px; padding: 10px 20px;
+-                  background: #6c6fff; color: white; text-decoration: none;
+-                  border-radius: 8px; font-weight: 600; }}
+-        </style></head><body>
+-        <div class="box">
+-          <h2>⚙️ OAuth Client Chưa Được Cấu Hình</h2>
+-          <p>{str(e)}</p>
+-          <p>Để dùng Google OAuth, bạn cần:</p>
+-          <ol>
+-            <li>Tạo OAuth2 Client tại <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a></li>
+-            <li>Chọn <strong>Web application</strong>, thêm redirect URI:<br>
+-              <pre>{redirect_uri}</pre></li>
+-            <li>Tải <strong>client_secret.json</strong> và đặt vào thư mục <code>backend/</code>,<br>
+-              <em>hoặc</em> nhập Client ID + Secret trong <strong>Settings → Gemini</strong></li>
+-          </ol>
+-          <a class="btn" href="/">← Quay lại</a>
+-        </div></body></html>
+-        """
+-        return HTMLResponse(content=html, status_code=400)
+-
+-
+-@app.get("/api/auth/google/callback")
+-async def google_oauth_callback(request: Request, code: str = None, state: str = None, error: str = None):
+-    """Handle Google OAuth2 callback."""
+-    if error:
+-        return HTMLResponse(
+-            content=f"<script>window.opener?.postMessage({{type:'oauth_error',error:'{error}'}},'*');window.close();</script>",
+-            status_code=200,
+-        )
+-    if not code or not state:
+-        raise HTTPException(status_code=400, detail="Missing code or state")
+-
+-    try:
+-        token_data = auth_module.complete_google_oauth(code, state)
+-
+-        # Try to get user info for display
+-        creds = auth_module.get_google_credentials()
+-        user_info = auth_module.get_google_user_info(creds) if creds else {}
+-        email = user_info.get("email", "")
+-        name = user_info.get("name", "Google User")
+-
+-        # Success page — posts message to opener and closes
+-        html = f"""
+-        <!DOCTYPE html><html><head>
+-        <title>Login Thành Công</title>
+-        <style>
+-          body {{ font-family: system-ui; background: #0e1221; color: #e8eaf2;
+-                 display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }}
+-          .box {{ background: #1c2236; border: 1px solid rgba(255,255,255,0.1);
+-                  border-radius: 16px; padding: 40px; text-align:center; max-width: 360px; }}
+-          .icon {{ font-size: 48px; margin-bottom: 16px; }}
+-          h2 {{ color: #4ade80; margin-bottom: 8px; }}
+-          p {{ color: #8892b0; font-size: 14px; }}
+-        </style>
+-        <script>
+-          // Notify the parent window
+-          if (window.opener) {{
+-            window.opener.postMessage({{
+-              type: 'oauth_success',
+-              provider: 'gemini',
+-              email: '{email}',
+-              name: '{name}'
+-            }}, '*');
+-          }}
+-          setTimeout(() => window.close(), 2000);
+-        </script>
+-        </head><body>
+-        <div class="box">
+-          <div class="icon">✅</div>
+-          <h2>Đăng nhập thành công!</h2>
+-          <p>Xin chào, <strong>{name}</strong>!<br>{email}</p>
+-          <p style="margin-top:12px; font-size:12px;">Cửa sổ này sẽ tự đóng...</p>
+-        </div></body></html>
+-        """
+-        return HTMLResponse(content=html)
+-    except Exception as e:
+-        return HTMLResponse(
+-            content=f"""
+-            <script>
+-              if (window.opener) window.opener.postMessage({{type:'oauth_error',error:'{str(e)}'}}, '*');
+-              setTimeout(() => window.close(), 3000);
+-            </script>
+-            <p style="color:red">Lỗi: {str(e)}</p>
+-            """,
+-            status_code=200,
+-        )
+-
+-
+-@app.get("/api/auth/google/status")
+-async def google_auth_status():
+-    """Get Google OAuth status and user info."""
+-    creds = auth_module.get_google_credentials()
+-    if not creds:
+-        return {"authenticated": False}
+-    user_info = auth_module.get_google_user_info(creds) or {}
+-    return {
+-        "authenticated": True,
+-        "email": user_info.get("email"),
+-        "name": user_info.get("name"),
+-        "picture": user_info.get("picture"),
+-    }
+-
+-
+-@app.delete("/api/auth/google/logout")
+-async def google_logout():
+-    """Remove stored Google OAuth tokens."""
+-    get_store().delete_oauth_token()
+-    return {"ok": True, "message": "Logged out from Google"}
+ 
+ 
+ 
+diff --git a/backend/models_helper.py b/backend/models_helper.py
+index 8e85927..485ed6e 100644
+--- a/backend/models_helper.py
++++ b/backend/models_helper.py
+@@ -1,7 +1,6 @@
+ import asyncio
+ from fastapi import HTTPException
+-from auth import get_store
+-import auth as auth_module
++import config
+ 
+ async def get_provider_models(provider: str, api_key: str = None) -> list[str]:
+     """
+@@ -16,9 +15,9 @@ async def get_provider_models(provider: str, api_key: str = None) -> list[str]:
+     if provider == "litert_lm":
+         return []
+ 
+-    # Resolve API Key
+-    store = get_store()
+-    resolved_key = api_key or store.get_api_key(provider)
++    resolved_key = api_key
++    if not resolved_key and provider == "gemini" and hasattr(config, "GEMINI_API_KEY"):
++        resolved_key = config.GEMINI_API_KEY
+ 
+     # ── Gemini ──
+     if provider == "gemini":
+@@ -51,10 +50,6 @@ async def get_provider_models(provider: str, api_key: str = None) -> list[str]:
+             client = None
+             if resolved_key:
+                 client = genai.Client(api_key=resolved_key)
+-            else:
+-                creds = auth_module.get_google_credentials()
+-                if creds:
+-                    client = genai.Client(credentials=creds)
+ 
+             if client:
+                 def fetch_gemini():
+diff --git a/frontend/app.js b/frontend/app.js
+index 3274a9f..aa9d87b 100644
+--- a/frontend/app.js
++++ b/frontend/app.js
+@@ -141,6 +141,7 @@ const els = {
+   agentEmojiInput: $('agent-emoji-input'),
+   agentApiKeyInput: $('agent-apikey-input'),
+   agentSystemInput: $('agent-system-input'),
++  agentSkillSelect: $('agent-skill-select'),
+ };
+ 
+ // ── Model defaults by provider ─────────────────────────────────
+@@ -866,6 +867,23 @@ function openAddAgentModal() {
+   els.agentEmojiInput.value = '';
+   els.agentApiKeyInput.value = '';
+   els.agentSystemInput.value = '';
++
++  els.agentSkillSelect.innerHTML = '<option value="">-- Tùy chỉnh (Không dùng skill) --</option>';
++  state.skills.forEach(skill => {
++    const opt = document.createElement('option');
++    opt.value = skill.name;
++    opt.textContent = skill.name;
++    els.agentSkillSelect.appendChild(opt);
++  });
++
++  if (state.skills.length > 0) {
++    const defaultSkill = state.skills[0];
++    els.agentSkillSelect.value = defaultSkill.name;
++    els.agentSystemInput.value = defaultSkill.system_prompt;
++  } else {
++    els.agentSkillSelect.value = '';
++  }
++
+   const inputEl = $('agent-model-input');
+   if (inputEl) inputEl.value = '';
+   updateAgentModelsDropdown();
+@@ -882,7 +900,16 @@ async function openEditAgentModal(idx) {
+   els.agentEmojiInput.value = agent.avatar_emoji || '';
+   els.agentApiKeyInput.value = agent.api_key || '';
+   els.agentSystemInput.value = agent.system_prompt || '';
+-  
++
++  els.agentSkillSelect.innerHTML = '<option value="">-- Tùy chỉnh (Không dùng skill) --</option>';
++  state.skills.forEach(skill => {
++    const opt = document.createElement('option');
++    opt.value = skill.name;
++    opt.textContent = skill.name;
++    els.agentSkillSelect.appendChild(opt);
++  });
++  els.agentSkillSelect.value = agent.skill || '';
++
+   await updateAgentModelsDropdown();
+   if (agent.provider === 'litert_lm') {
+     const inputEl = $('agent-model-input');
+@@ -1024,6 +1051,7 @@ function saveAgent() {
+     avatar_emoji: els.agentEmojiInput.value.trim() || def.emoji || '🤖',
+     api_key: els.agentApiKeyInput.value.trim(),
+     system_prompt: els.agentSystemInput.value.trim(),
++    skill: els.agentSkillSelect.value || null,
+   };
+ 
+   if (state.editingAgentIndex !== null && state.editingAgentIndex !== undefined) {
+@@ -1081,20 +1109,7 @@ async function refreshSettingsStatus() {
+     const configuredCount = ['gemini','openai','anthropic','openrouter','freemodel'].filter(p => status[p]?.method).length;
+     updateSidebarAuthDot(configuredCount);
+ 
+-    if (status.gemini?.has_oauth) {
+-      try {
+-        const oauthStatus = await apiGet('/api/auth/google/status');
+-        if (oauthStatus.authenticated) {
+-          showGoogleUser(oauthStatus);
+-        } else {
+-          hideGoogleUser();
+-        }
+-      } catch {
+-        hideGoogleUser();
+-      }
+-    } else {
+-      hideGoogleUser();
+-    }
++
+   } catch (e) {
+     console.warn('Could not load settings status:', e);
+   }
+@@ -1121,152 +1136,7 @@ function updateProviderUI(provider, status) {
+   }
+ }
+ 
+-function showGoogleUser(userInfo) {
+-  const card = document.getElementById('gemini-oauth-user');
+-  const avatar = document.getElementById('gemini-oauth-avatar');
+-  const name = document.getElementById('gemini-oauth-name');
+-  const email = document.getElementById('gemini-oauth-email');
+-  const loginBtn = document.getElementById('btn-google-login');
+-
+-  if (card) card.style.display = 'flex';
+-  if (loginBtn) loginBtn.style.display = 'none';
+-  if (avatar && userInfo.picture) avatar.src = userInfo.picture;
+-  if (name) name.textContent = userInfo.name || 'Google User';
+-  if (email) email.textContent = userInfo.email || '';
+-}
+-
+-function hideGoogleUser() {
+-  const card = document.getElementById('gemini-oauth-user');
+-  const loginBtn = document.getElementById('btn-google-login');
+-  if (card) card.style.display = 'none';
+-  if (loginBtn) loginBtn.style.display = 'inline-flex';
+-}
+-
+-// ── Credential Files Management ────────────────────────────────
+-function updateFilesUI(files) {
+-  if (!files) return;
+-
+-  const items = {
+-    client_secret: {
+-      badge: $('badge-client-secret'),
+-      btn: $('btn-delete-client-secret')
+-    },
+-    oauth_creds: {
+-      badge: $('badge-oauth-creds'),
+-      btn: $('btn-delete-oauth-creds')
+-    },
+-    credentials: {
+-      badge: $('badge-credentials'),
+-      btn: $('btn-delete-credentials')
+-    },
+-    env: {
+-      badge: $('badge-env'),
+-      btn: null
+-    }
+-  };
+-
+-  for (const [key, item] of Object.entries(items)) {
+-    if (!item.badge) continue;
+-    const exists = files[key];
+-    if (exists) {
+-      item.badge.textContent = key === 'env' ? 'Đã cấu hình' : 'Đã có';
+-      item.badge.className = 'file-status-badge badge-set';
+-      if (item.btn) item.btn.style.display = 'inline-flex';
+-    } else {
+-      item.badge.textContent = key === 'env' ? 'Chưa cấu hình' : 'Chưa có';
+-      item.badge.className = 'file-status-badge badge-not-set';
+-      if (item.btn) item.btn.style.display = 'none';
+-    }
+-  }
+-}
+-
+-function setupUploadZone() {
+-  const zone = $('upload-zone');
+-  const input = $('settings-file-input');
+-  if (!zone || !input) return;
+-
+-  // Click to open file dialog
+-  zone.addEventListener('click', () => input.click());
+-
+-  // Drag over highlights
+-  ['dragenter', 'dragover'].forEach(name => {
+-    zone.addEventListener(name, (e) => {
+-      e.preventDefault();
+-      e.stopPropagation();
+-      zone.classList.add('dragover');
+-    });
+-  });
+-
+-  ['dragleave', 'drop'].forEach(name => {
+-    zone.addEventListener(name, (e) => {
+-      e.preventDefault();
+-      e.stopPropagation();
+-      zone.classList.remove('dragover');
+-    });
+-  });
+-
+-  // Handle file drop
+-  zone.addEventListener('drop', (e) => {
+-    const dt = e.dataTransfer;
+-    const files = dt.files;
+-    if (files.length > 0) {
+-      handleCredentialUpload(files[0]);
+-    }
+-  });
+-
+-  // Handle file input selection
+-  input.addEventListener('change', () => {
+-    if (input.files.length > 0) {
+-      handleCredentialUpload(input.files[0]);
+-      input.value = ''; // Reset input selection
+-    }
+-  });
+-}
+-
+-async function handleCredentialUpload(file) {
+-  if (!file.name.endsWith('.json')) {
+-    showToast('⚠️ Chỉ chấp nhận các file định dạng JSON (.json)', 'error');
+-    return;
+-  }
+-  if (!['client_secret.json', 'oauth_creds.json', 'credentials.json'].includes(file.name)) {
+-    showToast('⚠️ Tên file phải là client_secret.json, oauth_creds.json hoặc credentials.json', 'error');
+-    return;
+-  }
+-
+-  const formData = new FormData();
+-  formData.append('file', file);
+-
+-  try {
+-    const r = await fetch(`${API_BASE}/api/settings/upload-file`, {
+-      method: 'POST',
+-      body: formData,
+-    });
+-    const res = await r.json();
+-    if (!r.ok) throw new Error(res.detail || 'HTTP error');
+-
+-    showToast(`✅ Tải lên file ${file.name} thành công!`);
+-    await refreshSettingsStatus();
+-  } catch (e) {
+-    showToast(`❌ Lỗi tải lên: ${e.message}`, 'error');
+-  }
+-}
+-
+-async function deleteCredentialFile(filename) {
+-  if (!confirm(`Bạn chắc chắn muốn xóa file credentials "${filename}"?`)) return;
+ 
+-  try {
+-    const r = await fetch(`${API_BASE}/api/settings/file/${filename}`, {
+-      method: 'DELETE',
+-    });
+-    const res = await r.json();
+-    if (!r.ok) throw new Error(res.detail || 'HTTP error');
+-
+-    showToast(`🗑 Đã xóa file ${filename}`);
+-    await refreshSettingsStatus();
+-  } catch (e) {
+-    showToast(`❌ Lỗi khi xóa file: ${e.message}`, 'error');
+-  }
+-}
+ 
+ 
+ function updateSidebarAuthDot(configuredCount) {
+@@ -1310,48 +1180,7 @@ async function clearApiKey(provider, inputId) {
+   }
+ }
+ 
+-// ── Google OAuth Flow ──────────────────────────────────────────
+-function startGoogleLogin() {
+-  const popup = window.open(
+-    '/api/auth/google/login',
+-    'google-oauth',
+-    'width=520,height=620,left=200,top=100,toolbar=no,menubar=no'
+-  );
+-
+-  if (!popup) {
+-    showToast('⚠️ Popup bị chặn. Hãy cho phép popup cho trang này.', 'error');
+-    return;
+-  }
+-
+-  const handler = async (event) => {
+-    if (event.origin !== window.location.origin) return;
+-    const msg = event.data;
+-    if (!msg || msg.type === undefined) return;
+ 
+-    window.removeEventListener('message', handler);
+-
+-    if (msg.type === 'oauth_success') {
+-      showToast(`✅ Đăng nhập thành công! Xin chào ${msg.name}`);
+-      await refreshSettingsStatus();
+-      showGoogleUser({ name: msg.name, email: msg.email, picture: null });
+-    } else if (msg.type === 'oauth_error') {
+-      showToast(`❌ OAuth lỗi: ${msg.error}`, 'error');
+-    }
+-  };
+-
+-  window.addEventListener('message', handler);
+-}
+-
+-async function googleLogout() {
+-  try {
+-    await fetch(`${API_BASE}/api/auth/google/logout`, { method: 'DELETE' });
+-    hideGoogleUser();
+-    await refreshSettingsStatus();
+-    showToast('👋 Đã đăng xuất khỏi Google');
+-  } catch (e) {
+-    showToast(`❌ Lỗi: ${e.message}`, 'error');
+-  }
+-}
+ 
+ // ── Toast Notifications ────────────────────────────────────────
+ function showToast(message, type = 'success') {
+@@ -2026,6 +1855,15 @@ function bindEvents() {
+   $('btn-save-agent').addEventListener('click', saveAgent);
+ 
+   els.agentProviderSelect.addEventListener('change', updateAgentModelsDropdown);
++  els.agentSkillSelect?.addEventListener('change', (e) => {
++    const skillName = e.target.value;
++    if (skillName) {
++      const skill = state.skills.find(s => s.name === skillName);
++      if (skill) {
++        els.agentSystemInput.value = skill.system_prompt;
++      }
++    }
++  });
+ 
+   $('btn-room-settings').addEventListener('click', () => {
+     if (!state.currentRoomId) return;
+@@ -2061,27 +1899,7 @@ function bindEvents() {
+     if (e.target === $('modal-settings')) closeSettings();
+   });
+ 
+-  // Google OAuth
+-  $('btn-google-login').addEventListener('click', startGoogleLogin);
+-  $('btn-google-logout').addEventListener('click', googleLogout);
+-
+-  // Google OAuth client save
+-  $('btn-save-google-client').addEventListener('click', async () => {
+-    const clientId = $('google-client-id').value.trim();
+-    const clientSecret = $('google-client-secret').value.trim();
+-    if (!clientId || !clientSecret) {
+-      showToast('⚠️ Vui lòng nhập đầy đủ Client ID và Client Secret', 'error');
+-      return;
+-    }
+-    try {
+-      await apiPost('/api/settings/google-client', { client_id: clientId, client_secret: clientSecret });
+-      showToast('✅ Google OAuth client đã lưu! Giờ có thể đăng nhập.');
+-      $('google-client-id').value = '';
+-      $('google-client-secret').value = '';
+-    } catch (e) {
+-      showToast(`❌ ${e.message}`, 'error');
+-    }
+-  });
++
+ 
+   // API Key save/clear buttons
+   $('btn-save-gemini-key').addEventListener('click', () => saveApiKey('gemini', 'gemini-api-key-input'));
+@@ -2108,11 +1926,7 @@ function bindEvents() {
+     }
+   });
+ 
+-  // Credential Files setup and delete events
+-  setupUploadZone();
+-  $('btn-delete-client-secret').addEventListener('click', () => deleteCredentialFile('client_secret.json'));
+-  $('btn-delete-oauth-creds').addEventListener('click', () => deleteCredentialFile('oauth_creds.json'));
+-  $('btn-delete-credentials').addEventListener('click', () => deleteCredentialFile('credentials.json'));
++
+ 
+   // Close modal on overlay click
+ 
+diff --git a/frontend/index.html b/frontend/index.html
+index 40c42a5..1152816 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -181,10 +181,14 @@
+           <label for="agent-emoji-input">Emoji Avatar</label>
+           <input type="text" id="agent-emoji-input" class="form-input" placeholder="🤖" maxlength="2" />
+         </div>
++        
+         <div class="form-group">
+-          <label for="agent-apikey-input">API Key <span class="optional">(để trống dùng .env)</span></label>
+-          <input type="password" id="agent-apikey-input" class="form-input" placeholder="sk-..." />
++          <label>Kỹ năng (Skill) <span>(Tùy chọn)</span></label>
++          <select id="agent-skill-select" class="form-input">
++             <option value="">-- Tùy chỉnh (Không dùng skill) --</option>
++          </select>
+         </div>
++
+         <div class="form-group">
+           <label for="agent-system-input">System Prompt <span class="optional">(tùy chọn)</span></label>
+           <textarea id="agent-system-input" class="form-input" rows="3" placeholder="Bạn là một chuyên gia..."></textarea>
+@@ -220,49 +224,9 @@
+             <span class="provider-badge" id="gemini-badge">–</span>
+           </div>
+ 
+-          <!-- OAuth Login section -->
+-          <div class="settings-section">
+-            <div class="settings-section-title">🔐 Đăng nhập Google OAuth</div>
+-            <p class="settings-hint">Đăng nhập bằng tài khoản Google để sử dụng Gemini mà không cần nhập API key thủ công.</p>
+-            <div class="oauth-user-card" id="gemini-oauth-user" style="display:none">
+-              <img class="oauth-avatar" id="gemini-oauth-avatar" src="" alt="" />
+-              <div>
+-                <div class="oauth-name" id="gemini-oauth-name"></div>
+-                <div class="oauth-email" id="gemini-oauth-email"></div>
+-              </div>
+-              <button class="btn-danger-sm" id="btn-google-logout">Đăng xuất</button>
+-            </div>
+-            <button class="btn-google-login" id="btn-google-login">
+-              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+-              Đăng nhập với Google
+-            </button>
+-            <div class="settings-hint" style="margin-top: 8px">
+-              Cần có <strong>client_secret.json</strong> trong thư mục <code>backend/</code><br>
+-              hoặc nhập Client ID/Secret bên dưới.
+-            </div>
+-          </div>
+-
+-          <!-- Google OAuth Client setup -->
+-          <details class="settings-details">
+-            <summary>🔧 Cấu hình Google OAuth Client</summary>
+-            <div class="settings-detail-body">
+-              <p class="settings-hint">Tạo OAuth2 Web Client tại <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>.<br>
+-              Redirect URI cần thêm: <code id="redirect-uri-display">http://localhost:8000/api/auth/google/callback</code></p>
+-              <div class="form-group">
+-                <label>Client ID</label>
+-                <input type="text" id="google-client-id" class="form-input" placeholder="xxx.apps.googleusercontent.com" />
+-              </div>
+-              <div class="form-group" style="margin-top: 10px">
+-                <label>Client Secret</label>
+-                <input type="password" id="google-client-secret" class="form-input" placeholder="GOCSPX-..." />
+-              </div>
+-              <button class="btn-secondary" id="btn-save-google-client" style="margin-top: 10px">Lưu OAuth Client</button>
+-            </div>
+-          </details>
+-
+           <!-- API Key alternative -->
+           <details class="settings-details">
+-            <summary>🔑 Dùng API Key thay thế</summary>
++            <summary>🔑 API Key</summary>
+             <div class="settings-detail-body">
+               <p class="settings-hint">Lấy API key tại <a href="https://aistudio.google.com/app/api-keys" target="_blank">Google AI Studio</a></p>
+               <div class="api-key-row">
+@@ -365,54 +329,6 @@
+           </div>
+         </div>
+ 
+-        <!-- File Drop Section -->
+-        <div class="settings-provider-card">
+-          <div class="provider-header">
+-            <div class="provider-icon">📁</div>
+-            <div class="provider-info">
+-              <div class="provider-name">Credential Files</div>
+-              <div class="provider-status">Kéo thả hoặc chọn file để tải lên trực tiếp</div>
+-            </div>
+-          </div>
+-          <div class="settings-section">
+-            <!-- Upload Drag & Drop Zone -->
+-            <div class="upload-zone" id="upload-zone">
+-              <div class="upload-zone-content">
+-                <span class="upload-icon">📤</span>
+-                <span class="upload-text">Kéo thả hoặc click để tải lên <code>client_secret.json</code> hoặc <code>oauth_creds.json</code></span>
+-                <input type="file" id="settings-file-input" style="display: none;" accept=".json" />
+-              </div>
+-            </div>
+-
+-            <div class="file-hint-grid">
+-              <div class="file-hint-item" id="file-item-client_secret">
+-                <div class="file-info-container">
+-                  <code>client_secret.json</code>
+-                  <span class="file-status-badge badge-not-set" id="badge-client-secret">Chưa có</span>
+-                  <button class="btn-danger-xs" id="btn-delete-client-secret" style="display:none" title="Xóa file">✕</button>
+-                </div>
+-                <span>Google OAuth2 client (tải từ Google Cloud Console)</span>
+-              </div>
+-              
+-              <div class="file-hint-item" id="file-item-oauth_creds">
+-                <div class="file-info-container">
+-                  <code>oauth_creds.json</code>
+-                  <span class="file-status-badge badge-not-set" id="badge-oauth-creds">Chưa có</span>
+-                  <button class="btn-danger-xs" id="btn-delete-oauth-creds" style="display:none" title="Xóa file">✕</button>
+-                </div>
+-                <span>Google OAuth token (tự động tạo sau khi đăng nhập)</span>
+-              </div>
+-
+-              <div class="file-hint-item" id="file-item-credentials">
+-                <div class="file-info-container">
+-                  <code>credentials.json</code>
+-                  <span class="file-status-badge badge-not-set" id="badge-credentials">Chưa có</span>
+-                  <button class="btn-danger-xs" id="btn-delete-credentials" style="display:none" title="Xóa file">✕</button>
+-                </div>
+-                <span>API keys (tự động lưu khi nhập ở các phần trên)</span>
+-              </div>
+-
+-              <div class="file-hint-item" id="file-item-env">
+                 <div class="file-info-container">
+                   <code>.env</code>
+                   <span class="file-status-badge badge-not-set" id="badge-env">Chưa cấu hình</span>

@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 import database
 import config
+import auth as auth_module
+from auth import get_store
 from chat_room import ChatRoom, create_agent
 import agent_library as lib_module
 from agent_library import get_library, BUILTIN_SKILLS, check_agent_health
@@ -208,8 +210,119 @@ async def list_provider_models(provider: str, api_key: str = None):
 
 
 
+# ── Settings & Credentials API ────────────────────────────────────────────────
+
+@app.get("/api/settings/status")
+async def settings_status():
+    """Return auth/credential status for all providers."""
+    return get_store().get_status()
 
 
+class SaveKeyRequest(BaseModel):
+    provider: str
+    api_key: str
+
+
+@app.post("/api/settings/api-key")
+async def save_api_key(req: SaveKeyRequest):
+    """Save an API key for a provider to credentials.json."""
+    if req.provider not in ("gemini", "openai", "anthropic", "openrouter", "freemodel"):
+        raise HTTPException(status_code=400, detail="Unknown provider")
+    if not req.api_key.strip():
+        get_store().delete_api_key(req.provider)
+        return {"ok": True, "message": f"{req.provider} API key removed"}
+    get_store().set_api_key(req.provider, req.api_key.strip())
+    return {"ok": True, "message": f"{req.provider} API key saved"}
+
+
+class SaveBaseUrlRequest(BaseModel):
+    provider: str
+    base_url: str
+
+
+@app.post("/api/settings/base-url")
+async def save_base_url(req: SaveBaseUrlRequest):
+    """Save a base URL for a provider to credentials.json."""
+    if req.provider not in ("gemini", "openai", "anthropic", "openrouter", "freemodel"):
+        raise HTTPException(status_code=400, detail="Unknown provider")
+    if not req.base_url.strip():
+        get_store().set_base_url(req.provider, "")
+        return {"ok": True, "message": f"{req.provider} Base URL cleared"}
+    get_store().set_base_url(req.provider, req.base_url.strip())
+    return {"ok": True, "message": f"{req.provider} Base URL saved"}
+
+
+@app.delete("/api/settings/api-key/{provider}")
+async def delete_api_key(provider: str):
+    """Remove a saved API key."""
+    get_store().delete_api_key(provider)
+    return {"ok": True}
+
+
+class SaveGoogleClientRequest(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+@app.post("/api/settings/google-client")
+async def save_google_client(req: SaveGoogleClientRequest):
+    """Save Google OAuth2 client credentials."""
+    if not req.client_id.strip() or not req.client_secret.strip():
+        raise HTTPException(status_code=400, detail="client_id and client_secret are required")
+    get_store().save_google_client_config(req.client_id.strip(), req.client_secret.strip())
+    return {"ok": True, "message": "Google OAuth client saved"}
+
+
+@app.post("/api/settings/upload-file")
+async def upload_credential_file(file: UploadFile):
+    """Upload a credential file (client_secret.json or oauth_creds.json)."""
+    filename = file.filename
+    if filename not in ("client_secret.json", "oauth_creds.json", "credentials.json"):
+        raise HTTPException(
+            status_code=400,
+            detail="Chỉ chấp nhận các file: client_secret.json, oauth_creds.json, credentials.json"
+        )
+
+    # Read and parse JSON content to ensure it is valid
+    try:
+        content = await file.read()
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="File không phải định dạng JSON hợp lệ.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Lỗi đọc file: {str(e)}")
+
+    dest_path = auth_module.BACKEND_DIR / filename
+    try:
+        with open(dest_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        # Clear active store caching if config files changed
+        if filename == "credentials.json":
+            auth_module._store = None
+
+        return {"ok": True, "message": f"Đã lưu file {filename} thành công!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi lưu file: {str(e)}")
+
+
+@app.delete("/api/settings/file/{filename}")
+async def delete_credential_file(filename: str):
+    """Delete an uploaded credential file."""
+    if filename not in ("client_secret.json", "oauth_creds.json", "credentials.json"):
+        raise HTTPException(status_code=400, detail="Tên file không hợp lệ")
+
+    dest_path = auth_module.BACKEND_DIR / filename
+    if dest_path.exists():
+        try:
+            dest_path.unlink()
+            if filename == "credentials.json":
+                auth_module._store = None
+            return {"ok": True, "message": f"Đã xóa file {filename}"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi khi xóa file: {str(e)}")
+    else:
+        raise HTTPException(status_code=404, detail="File không tồn tại")
 
 
 

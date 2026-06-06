@@ -181,7 +181,6 @@
           <label for="agent-emoji-input">Emoji Avatar</label>
           <input type="text" id="agent-emoji-input" class="form-input" placeholder="🤖" maxlength="2" />
         </div>
-        
         <div class="form-group">
           <label>Kỹ năng (Skill) <span>(Tùy chọn)</span></label>
           <select id="agent-skill-select" class="form-input">
@@ -329,6 +328,43 @@
           </div>
         </div>
 
+        <!-- File Drop Section -->
+        <div class="settings-provider-card">
+          <div class="provider-header">
+            <div class="provider-icon">📁</div>
+            <div class="provider-info">
+              <div class="provider-name">Credential Files</div>
+              <div class="provider-status">Kéo thả hoặc chọn file để tải lên trực tiếp</div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <!-- Upload Drag & Drop Zone -->
+            <div class="upload-zone" id="upload-zone">
+              <div class="upload-zone-content">
+                <span class="upload-icon">📤</span>
+                <span class="upload-text">Kéo thả hoặc click để tải lên <code>credentials.json</code></span>
+                <input type="file" id="settings-file-input" style="display: none;" accept=".json" />
+              </div>
+            </div>
+
+            <div class="file-hint-grid">
+                  <code>oauth_creds.json</code>
+                  <span class="file-status-badge badge-not-set" id="badge-oauth-creds">Chưa có</span>
+                  <button class="btn-danger-xs" id="btn-delete-oauth-creds" style="display:none" title="Xóa file">✕</button>
+                </div>
+                <span>Google OAuth token (tự động tạo sau khi đăng nhập)</span>
+              </div>
+
+              <div class="file-hint-item" id="file-item-credentials">
+                <div class="file-info-container">
+                  <code>credentials.json</code>
+                  <span class="file-status-badge badge-not-set" id="badge-credentials">Chưa có</span>
+                  <button class="btn-danger-xs" id="btn-delete-credentials" style="display:none" title="Xóa file">✕</button>
+                </div>
+                <span>API keys (tự động lưu khi nhập ở các phần trên)</span>
+              </div>
+
+              <div class="file-hint-item" id="file-item-env">
                 <div class="file-info-container">
                   <code>.env</code>
                   <span class="file-status-badge badge-not-set" id="badge-env">Chưa cấu hình</span>

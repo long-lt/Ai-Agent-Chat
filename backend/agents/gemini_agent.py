@@ -53,7 +53,7 @@ class GeminiAgent(BaseAgent):
         from config import GEMINI_API_KEY
         if GEMINI_API_KEY:
             return GEMINI_API_KEY
-            
+
         return None
 
     async def chat_stream(
@@ -109,6 +109,8 @@ class GeminiAgent(BaseAgent):
             async for token in response:
                 if token:
                     yield token
+
+
 
     def _format_messages_as_prompt(self, messages: list[dict]) -> str:
         """Format history as a simple text prompt for Antigravity SDK."""
