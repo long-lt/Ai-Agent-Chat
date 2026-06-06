@@ -257,22 +257,7 @@ async def check_agent_health(provider: str, model: str, api_key: Optional[str] =
 
 async def _health_gemini(api_key: Optional[str], model: str, store) -> dict:
     if not api_key:
-        # Try OAuth
-        try:
-            from auth import get_google_credentials
-            from google import genai as gai
-            creds = get_google_credentials()
-            if not creds:
-                return {"ok": False, "error": "No API key or OAuth token configured"}
-            client = gai.Client(credentials=creds)
-            resp = await asyncio.wait_for(
-                asyncio.to_thread(
-                    lambda: client.models.generate_content(model=model or "gemini-2.0-flash", contents="Hi")
-                ), timeout=10.0
-            )
-            return {"ok": True, "token_info": _extract_gemini_usage(resp)}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": "No API key configured"}
 
     try:
         from google.antigravity import Agent as AGYAgent, LocalAgentConfig
